@@ -9,14 +9,17 @@ import {
   Maximize2,
   Minimize2,
   Trash2,
-  ChevronDown,
   Building2,
   Database,
   ArrowRight,
   Loader2,
-  HelpCircle,
-  AlertCircle,
   CheckCircle2,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Radio,
+  Square,
 } from 'lucide-react';
 import { getChatAvailableProjects, ChatProjectOption } from '@/lib/ai/actions';
 
@@ -29,6 +32,7 @@ interface Message {
 }
 
 const TOOL_FRIENDLY_NAMES: Record<string, string> = {
+  getSystemSummary: 'Resumen Global Consolidado',
   listUserProjects: 'Listado de Obras',
   getProjectOverview: 'Resumen Ejecutivo & Financiero',
   getRubrosProgress: 'Planillaje de Rubros',
@@ -60,6 +64,18 @@ const SUGGESTED_PROMPTS = [
     icon: '📝',
   },
 ];
+
+/**
+ * Limpia texto de markdown para lectura por voz natural (TTS)
+ */
+function cleanTextForSpeech(text: string): string {
+  return text
+    .replace(/\|[^\n]+\|/g, '') // Elimina tablas
+    .replace(/[#*`_>~]/g, '')   // Elimina markdown
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Enlaces a texto plano
+    .replace(/\n+/g, '. ')
+    .trim();
+}
 
 /**
  * Formateador de Markdown a HTML seguro y limpio
@@ -107,7 +123,6 @@ function MarkdownRenderer({ content }: { content: string }) {
   };
 
   const formatInline = (text: string): React.ReactNode => {
-    // Reemplaza **negrita**
     const parts = text.split(/(\*\*.*?\*\*|\`.*?\`)/g);
     return parts.map((part, i) => {
       if (part.startsWith('**') && part.endsWith('**')) {
@@ -127,14 +142,12 @@ function MarkdownRenderer({ content }: { content: string }) {
   lines.forEach((line, index) => {
     const trimmed = line.trim();
 
-    // Detección de tablas markdown
     if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
       inTable = true;
       const cells = trimmed
         .slice(1, -1)
         .split('|')
         .map((c) => c.trim());
-      // Si es separador (|---|---|), omitir de filas de datos
       if (cells.every((c) => /^:?-+:?$/.test(c))) {
         // separador
       } else {
@@ -150,7 +163,6 @@ function MarkdownRenderer({ content }: { content: string }) {
       return;
     }
 
-    // Títulos
     if (trimmed.startsWith('### ')) {
       elements.push(
         <h4 key={index} className="font-semibold text-slate-900 text-sm mt-3 mb-1 flex items-center gap-1.5">
@@ -168,7 +180,6 @@ function MarkdownRenderer({ content }: { content: string }) {
       return;
     }
 
-    // Listas con viñetas
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       elements.push(
         <li key={index} className="ml-4 list-disc text-xs text-slate-700 leading-relaxed my-0.5">
@@ -178,7 +189,6 @@ function MarkdownRenderer({ content }: { content: string }) {
       return;
     }
 
-    // Listas numeradas
     if (/^\d+\.\s+/.test(trimmed)) {
       elements.push(
         <div key={index} className="ml-4 text-xs text-slate-700 leading-relaxed my-0.5">
@@ -188,7 +198,6 @@ function MarkdownRenderer({ content }: { content: string }) {
       return;
     }
 
-    // Párrafo normal
     elements.push(
       <p key={index} className="text-xs text-slate-700 leading-relaxed my-1">
         {formatInline(trimmed)}
@@ -212,8 +221,28 @@ export function AiChatAssistant() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Estados de Voz y Conversación Natural
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(true);
+  const [conversationalMode, setConversationalMode] = useState(false); // Modo Manos Libres continuo
+  const [recordTimer, setRecordTimer] = useState(0);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const conversationalModeRef = useRef(conversationalMode);
+
+  // VAD (Voice Activity Detection / Detector de silencio automático)
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const vadIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    conversationalModeRef.current = conversationalMode;
+  }, [conversationalMode]);
 
   // Cargar proyectos disponibles al montar
   useEffect(() => {
@@ -239,9 +268,211 @@ export function AiChatAssistant() {
     }
   }, [isOpen]);
 
+  // Detener voz al cerrar
+  useEffect(() => {
+    if (!isOpen) {
+      stopSpeaking();
+      stopRecording();
+    }
+  }, [isOpen]);
+
+  // Manejo de Reproducción de Voz (Text-to-Speech)
+  const speakText = (text: string, onEndCallback?: () => void) => {
+    if (!voiceOutputEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      if (onEndCallback) onEndCallback();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const clean = cleanTextForSpeech(text);
+    if (!clean) {
+      if (onEndCallback) onEndCallback();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.lang = 'es-ES';
+    utterance.rate = 1.05; // Ritmo fluido y natural
+
+    // Buscar una voz en español de calidad si está disponible
+    const voices = window.speechSynthesis.getVoices();
+    const spanishVoice =
+      voices.find((v) => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Paulina') || v.name.includes('Mónica'))) ||
+      voices.find((v) => v.lang.startsWith('es'));
+    if (spanishVoice) {
+      utterance.voice = spanishVoice;
+    }
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      if (onEndCallback) onEndCallback();
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      if (onEndCallback) onEndCallback();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopSpeaking = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  };
+
+  // Inicio de Grabación de Micrófono con Detector de Silencio (VAD)
+  const startRecording = async () => {
+    stopSpeaking();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : '';
+
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        await handleAudioTranscription(audioBlob);
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setRecordTimer(0);
+
+      timerIntervalRef.current = setInterval(() => {
+        setRecordTimer((t) => t + 1);
+      }, 1000);
+
+      // --- DETECTOR AUTOMÁTICO DE SILENCIO (VAD) PARA MODO CONVERSACIONAL ---
+      if (conversationalModeRef.current) {
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            const audioCtx = new AudioContextClass();
+            audioContextRef.current = audioCtx;
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            let userStartedSpeaking = false;
+            let silenceStart: number | null = null;
+            const SILENCE_TIMEOUT_MS = 1400; // 1.4 segundos de silencio tras hablar
+            const VOLUME_THRESHOLD = 16;     // Umbral de volumen para detectar voz
+
+            vadIntervalRef.current = setInterval(() => {
+              analyser.getByteFrequencyData(dataArray);
+              let sum = 0;
+              for (let i = 0; i < bufferLength; i++) {
+                sum += dataArray[i];
+              }
+              const averageVolume = sum / bufferLength;
+
+              if (averageVolume > VOLUME_THRESHOLD) {
+                userStartedSpeaking = true;
+                silenceStart = null;
+              } else if (userStartedSpeaking) {
+                // El usuario estaba hablando y ahora guardó silencio
+                if (!silenceStart) {
+                  silenceStart = Date.now();
+                } else if (Date.now() - silenceStart >= SILENCE_TIMEOUT_MS) {
+                  // Silencio detectado: Detener y enviar automáticamente
+                  if (vadIntervalRef.current) {
+                    clearInterval(vadIntervalRef.current);
+                    vadIntervalRef.current = null;
+                  }
+                  stopRecording();
+                }
+              }
+            }, 100);
+          }
+        } catch (vadError) {
+          console.warn('VAD no soportado en este navegador:', vadError);
+        }
+      }
+    } catch (err) {
+      console.error('Error accediendo al micrófono:', err);
+      alert('No se pudo acceder al micrófono. Por favor verifica los permisos en tu navegador.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (vadIntervalRef.current) {
+      clearInterval(vadIntervalRef.current);
+      vadIntervalRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  // Transcribir audio grabado con Groq Whisper
+  const handleAudioTranscription = async (blob: Blob) => {
+    if (blob.size < 100) return; // Audio vacío
+
+    setIsTranscribing(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', blob, 'audio-record.webm');
+
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Error al transcribir audio');
+      }
+
+      const data = await res.json();
+      const transcribedText = data.text?.trim();
+
+      if (transcribedText) {
+        // Enviar inmediatamente la pregunta transcrita
+        handleSendMessage(transcribedText);
+      }
+    } catch (error: any) {
+      console.error('Error de transcripción:', error);
+      alert('Error al transcribir el audio: ' + (error.message || 'Intenta de nuevo'));
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  // Envío de Mensaje al Copilot
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputValue).trim();
     if (!text || isLoading) return;
+
+    stopSpeaking();
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -284,6 +515,16 @@ export function AiChatAssistant() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Si la voz está activada, leer la respuesta
+      speakText(data.text, () => {
+        // Si el "Modo Conversación Fluida / Manos Libres" está activo, reanudar escucha automáticamente para diálogo continuo
+        if (conversationalModeRef.current) {
+          setTimeout(() => {
+            startRecording();
+          }, 800);
+        }
+      });
     } catch (error: any) {
       console.error('Error al consultar Copilot:', error);
       const errorMessage: Message = {
@@ -306,7 +547,14 @@ export function AiChatAssistant() {
   };
 
   const clearChat = () => {
+    stopSpeaking();
     setMessages([]);
+  };
+
+  const formatTimer = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${mins}:${s < 10 ? '0' : ''}${s}`;
   };
 
   return (
@@ -326,8 +574,8 @@ export function AiChatAssistant() {
             </span>
           </div>
           <span className="font-semibold text-sm tracking-wide">LICOSA Copilot</span>
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase">
-            IA Obra
+          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase flex items-center gap-1">
+            <Mic className="h-2.5 w-2.5" /> Voz & Chat
           </span>
         </button>
       )}
@@ -337,8 +585,8 @@ export function AiChatAssistant() {
         <div
           className={`fixed bottom-4 right-4 z-50 flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden transition-all duration-200 ${
             isExpanded
-              ? 'w-[95vw] md:w-[700px] h-[85vh]'
-              : 'w-[92vw] sm:w-[460px] h-[600px] max-h-[85vh]'
+              ? 'w-[95vw] md:w-[720px] h-[86vh]'
+              : 'w-[92vw] sm:w-[470px] h-[610px] max-h-[86vh]'
           }`}
         >
           {/* Header */}
@@ -354,12 +602,31 @@ export function AiChatAssistant() {
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                     Online
                   </span>
+                  {isSpeaking && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-200 animate-pulse border border-cyan-400/40">
+                      <Volume2 className="h-3 w-3" /> Hablando...
+                    </span>
+                  )}
                 </div>
-                <p className="text-[11px] text-slate-300">Asistente técnico & financiero de obra</p>
+                <p className="text-[11px] text-slate-300">Asistente de obra con voz en tiempo real</p>
               </div>
             </div>
 
             <div className="flex items-center gap-1 text-slate-300">
+              {/* Botón Silenciar/Escuchar voz */}
+              <button
+                onClick={() => {
+                  if (isSpeaking) stopSpeaking();
+                  setVoiceOutputEnabled(!voiceOutputEnabled);
+                }}
+                title={voiceOutputEnabled ? 'Voz activada (clic para silenciar)' : 'Voz silenciada (clic para activar)'}
+                className={`rounded-lg p-1.5 transition-colors ${
+                  voiceOutputEnabled ? 'text-cyan-300 bg-white/10' : 'text-slate-400 hover:bg-white/10'
+                }`}
+              >
+                {voiceOutputEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </button>
+
               {messages.length > 0 && (
                 <button
                   onClick={clearChat}
@@ -386,22 +653,48 @@ export function AiChatAssistant() {
             </div>
           </div>
 
-          {/* Selector de Proyecto Activo */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100/80 border-b border-slate-200 text-xs">
-            <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-            <span className="text-slate-600 font-medium shrink-0">Obra:</span>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full bg-white text-slate-800 text-xs rounded-md border border-slate-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          {/* Barra de Controles: Selector de Obra + Toggle Modo Conversacional */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-100/90 border-b border-slate-200 text-xs">
+            <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+              <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+              <select
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="w-full bg-white text-slate-800 text-xs rounded-md border border-slate-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="ALL">🌐 Todas las obras (resumen global)</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.code} - {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Toggle Modo Manos Libres / Conversación continua */}
+            <button
+              onClick={() => {
+                const nextMode = !conversationalMode;
+                setConversationalMode(nextMode);
+                if (nextMode) {
+                  if (!isRecording && !isLoading && !isSpeaking) {
+                    startRecording();
+                  }
+                } else {
+                  stopRecording();
+                  stopSpeaking();
+                }
+              }}
+              title="Permite hablar y pausar de forma continua sin tocar la pantalla"
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                conversationalMode
+                  ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400/50'
+                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
             >
-              <option value="ALL">🌐 Todas las obras (búsqueda global)</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} - {p.name}
-                </option>
-              ))}
-            </select>
+              <Radio className={`h-3 w-3 ${conversationalMode ? 'animate-pulse text-white' : 'text-slate-400'}`} />
+              <span>{conversationalMode ? '🎙️ Manos Libres: ACTIVO' : 'Manos Libres: OFF'}</span>
+            </button>
           </div>
 
           {/* Área de Mensajes */}
@@ -412,10 +705,10 @@ export function AiChatAssistant() {
                   <Sparkles className="h-6 w-6" />
                 </div>
                 <h4 className="text-sm font-semibold text-slate-800">
-                  ¿En qué puedo ayudarte hoy?
+                  Asistente de Obra por Voz o Texto
                 </h4>
-                <p className="text-xs text-slate-500 max-w-xs mt-1 mb-5">
-                  Consulta datos en tiempo real de avance contractual, planillaje de rubros, kardex de bodega y reportes diarios.
+                <p className="text-xs text-slate-500 max-w-xs mt-1 mb-4">
+                  En **Modo Manos Libres**, solo habla. La IA detecta cuando guardas silencio (~1.5s), envía la pregunta, te responde por voz y vuelve a escucharte.
                 </p>
 
                 {/* Preguntas sugeridas */}
@@ -454,18 +747,33 @@ export function AiChatAssistant() {
                     }`}
                   >
                     {/* Badge de herramientas consultadas */}
-                    {message.role === 'assistant' && message.toolsExecuted && message.toolsExecuted.length > 0 && (
-                      <div className="mb-2 flex flex-wrap gap-1 items-center pb-1.5 border-b border-slate-100">
-                        <Database className="h-3 w-3 text-slate-400 shrink-0" />
-                        <span className="text-[10px] text-slate-400 font-medium">Fuentes consultadas:</span>
-                        {message.toolsExecuted.map((tName, tIdx) => (
-                          <span
-                            key={tIdx}
-                            className="inline-flex items-center px-1.5 py-0.2 rounded-md bg-slate-100 text-[10px] text-slate-600 font-mono"
-                          >
-                            {TOOL_FRIENDLY_NAMES[tName] || tName}
-                          </span>
-                        ))}
+                    {message.role === 'assistant' && (
+                      <div className="mb-2 flex items-center justify-between gap-1 pb-1.5 border-b border-slate-100">
+                        <div className="flex flex-wrap gap-1 items-center">
+                          <Database className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span className="text-[10px] text-slate-400 font-medium">Fuentes:</span>
+                          {message.toolsExecuted && message.toolsExecuted.length > 0 ? (
+                            message.toolsExecuted.map((tName, tIdx) => (
+                              <span
+                                key={tIdx}
+                                className="inline-flex items-center px-1.5 py-0.2 rounded-md bg-slate-100 text-[10px] text-slate-600 font-mono"
+                              >
+                                {TOOL_FRIENDLY_NAMES[tName] || tName}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-mono">Resumen de Obra</span>
+                          )}
+                        </div>
+
+                        {/* Botón Escuchar este mensaje */}
+                        <button
+                          onClick={() => speakText(message.content)}
+                          title="Escuchar respuesta"
+                          className="text-slate-400 hover:text-blue-600 p-0.5 transition-colors"
+                        >
+                          <Volume2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     )}
 
@@ -484,13 +792,41 @@ export function AiChatAssistant() {
               ))
             )}
 
-            {/* Indicador de cargando */}
+            {/* Banner de Estado de Grabación en vivo */}
+            {isRecording && (
+              <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 animate-pulse">
+                <div className="flex items-center gap-2 text-xs font-semibold">
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-ping"></span>
+                  <span>
+                    {conversationalMode
+                      ? `Escuchando (${formatTimer(recordTimer)})... Pausa de hablar y responderá solo`
+                      : `Escuchando tu voz (${formatTimer(recordTimer)})...`}
+                  </span>
+                </div>
+                <button
+                  onClick={stopRecording}
+                  className="px-2.5 py-1 rounded-lg bg-red-600 text-white text-[11px] font-medium hover:bg-red-700 flex items-center gap-1 shadow-xs"
+                >
+                  <Square className="h-3 w-3" /> Enviar ahora
+                </button>
+              </div>
+            )}
+
+            {/* Banner de Transcripción con Whisper */}
+            {isTranscribing && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-700">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                <span className="text-xs font-medium">Transcribiendo audio con Groq Whisper en tiempo real...</span>
+              </div>
+            )}
+
+            {/* Indicador de Consultando DB y Generando */}
             {isLoading && (
               <div className="flex items-start gap-2">
                 <div className="rounded-2xl rounded-bl-xs bg-white border border-slate-200 px-4 py-3 shadow-xs flex items-center gap-2.5">
                   <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                   <span className="text-xs text-slate-600 font-medium animate-pulse">
-                    Consultando datos y generando análisis...
+                    Consultando datos y formulando respuesta...
                   </span>
                 </div>
               </div>
@@ -502,15 +838,32 @@ export function AiChatAssistant() {
           {/* Input Footer */}
           <div className="p-3 bg-white border-t border-slate-200">
             <div className="relative flex items-center bg-slate-50 rounded-xl border border-slate-200 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+              {/* Botón de Micrófono / Grabación */}
+              <button
+                type="button"
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={isLoading || isTranscribing}
+                className={`ml-2 p-2 rounded-lg transition-all ${
+                  isRecording
+                    ? 'bg-red-600 text-white animate-pulse shadow-md'
+                    : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'
+                }`}
+                title={isRecording ? 'Detener y enviar pregunta' : 'Hablar por micrófono (Whisper IA)'}
+              >
+                {isRecording ? <Square className="h-4 w-4 fill-white" /> : <Mic className="h-4 w-4" />}
+              </button>
+
               <textarea
                 ref={inputRef}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={1}
-                placeholder="Pregunta sobre avance, rubros, bodega o reportes..."
-                className="w-full bg-transparent px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none resize-none max-h-24"
+                placeholder={isRecording ? 'Escuchando tu pregunta...' : 'Pregunta o mantén presionado el micro...'}
+                className="w-full bg-transparent px-3 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none resize-none max-h-24"
               />
+
+              {/* Botón Enviar texto */}
               <button
                 onClick={() => handleSendMessage()}
                 disabled={!inputValue.trim() || isLoading}
@@ -520,13 +873,22 @@ export function AiChatAssistant() {
                 <Send className="h-3.5 w-3.5" />
               </button>
             </div>
+
             <div className="flex items-center justify-between mt-2 px-1">
               <span className="text-[10px] text-slate-400 flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                Datos verificados de obra
+                Voz Whisper & Datos oficiales de obra
               </span>
-              <span className="text-[10px] text-slate-400">
-                Presiona <kbd className="font-mono bg-slate-100 px-1 rounded">Enter</kbd> para enviar
+              <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                {isSpeaking ? (
+                  <button onClick={stopSpeaking} className="text-red-500 font-semibold underline">
+                    Detener voz
+                  </button>
+                ) : (
+                  <span>
+                    Clic en 🎙️ para hablar o <kbd className="font-mono bg-slate-100 px-1 rounded">Enter</kbd>
+                  </span>
+                )}
               </span>
             </div>
           </div>
