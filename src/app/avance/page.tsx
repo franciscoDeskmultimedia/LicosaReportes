@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getProjects } from '@/lib/actions/projects';
 import { getProjectAccumulatedProgress } from '@/lib/actions/progress';
 import { ProjectProgressView } from '@/components/ProjectProgressView';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,9 +12,9 @@ interface PageProps {
 }
 
 export default async function AvanceAcumuladoPage({ searchParams }: PageProps) {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
-  const isAdmin = currentUser?.role === 'ADMIN';
+  const isAdmin = currentUser.role === 'ADMIN';
   const allowedProjectIds = isAdmin
     ? []
     : currentUser?.assignments

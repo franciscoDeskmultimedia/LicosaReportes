@@ -2,16 +2,16 @@ import React from 'react';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { getProjects } from '@/lib/actions/projects';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 import { UsersManagerView } from '@/components/UsersManagerView';
 
 export const dynamic = 'force-dynamic';
 
 export default async function UsuariosPage() {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
   // Only ADMIN can access user management
-  if (currentUser?.role !== 'ADMIN') {
+  if (currentUser.role !== 'ADMIN') {
     redirect('/');
   }
 

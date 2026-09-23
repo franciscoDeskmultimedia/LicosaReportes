@@ -6,7 +6,7 @@ import {
 } from '@/lib/actions/storage';
 import { getProjects } from '@/lib/actions/projects';
 import { StorageView } from '@/components/StorageView';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,7 @@ interface PageProps {
 
 export default async function BodegaPage({ searchParams }: PageProps) {
   const { projectId } = await searchParams;
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
   let projects = await getProjects();
 
   // If non-admin user has assigned projects, restrict to their assigned projects

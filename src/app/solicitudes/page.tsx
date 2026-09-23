@@ -4,7 +4,7 @@ import { getProjects } from '@/lib/actions/projects';
 import { getMachineryList } from '@/lib/actions/machinery';
 import { getWorkRequests } from '@/lib/actions/requests';
 import { WorkRequestsView } from '@/components/WorkRequestsView';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,9 +13,9 @@ interface PageProps {
 }
 
 export default async function SolicitudesPage({ searchParams }: PageProps) {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
-  const isAdmin = currentUser?.role === 'ADMIN';
+  const isAdmin = currentUser.role === 'ADMIN';
   const assignedProjectIds = isAdmin
     ? []
     : currentUser?.assignments?.map((a) => a.projectId) || [];
@@ -37,9 +37,6 @@ export default async function SolicitudesPage({ searchParams }: PageProps) {
   // Fetch materials, machinery and requests
   const [materials, machinery, requests] = await Promise.all([
     prisma.materialItem.findMany({
-      where: activeProjectId && activeProjectId !== 'ALL'
-        ? { OR: [{ projectId: activeProjectId }, { projectId: null }] }
-        : undefined,
       orderBy: { name: 'asc' },
     }),
     getMachineryList(),
@@ -86,6 +83,7 @@ export default async function SolicitudesPage({ searchParams }: PageProps) {
       machinery={machineryOptions}
       selectedProjectId={activeProjectId}
       currentUserRole={currentUser?.role}
+      isAdmin={isAdmin}
       canApprove={canApprove}
       canDispatch={canDispatch}
     />

@@ -5,8 +5,13 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// datasource db {
+//  provider = "sqlite" // Cambiar a "postgresql" al migrar a base de datos de producción
+//  url      = env("DATABASE_URL")
+// }
+
 datasource db {
-  provider = "sqlite" // Cambiar a "postgresql" al migrar a base de datos de producción
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

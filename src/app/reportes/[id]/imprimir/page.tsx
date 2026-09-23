@@ -2,6 +2,7 @@ import React from 'react';
 import { notFound } from 'next/navigation';
 import { getDailyReportById } from '@/lib/actions/dailyReports';
 import { OfficialReportDocument } from '@/components/OfficialReportDocument';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,7 @@ interface PageProps {
 }
 
 export default async function PrintReportPage({ params }: PageProps) {
+  await requireAuth();
   const { id } = await params;
   const report = await getDailyReportById(id);
 

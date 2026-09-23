@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
@@ -86,6 +87,14 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     assignments,
     projectRoles,
   };
+}
+
+export async function requireAuth(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect('/login');
+  }
+  return user;
 }
 
 

@@ -45,6 +45,7 @@ export function CreateRequestModal({
   materials,
   machinery,
   defaultProjectId,
+  isAdmin = false,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -52,6 +53,7 @@ export function CreateRequestModal({
   materials: MaterialOption[];
   machinery: MachineryOption[];
   defaultProjectId?: string;
+  isAdmin?: boolean;
 }) {
   const [type, setType] = useState<'MATERIAL' | 'MAQUINARIA'>('MATERIAL');
   const [projectId, setProjectId] = useState(defaultProjectId || projects[0]?.id || '');
@@ -59,6 +61,7 @@ export function CreateRequestModal({
   const [targetLocation, setTargetLocation] = useState('');
   const [justification, setJustification] = useState('');
   const [neededDate, setNeededDate] = useState(new Date().toISOString().split('T')[0]);
+  const [initialStatus, setInitialStatus] = useState<'PENDIENTE' | 'APROBADA'>('PENDIENTE');
 
   // Material fields
   const [selectedMaterialId, setSelectedMaterialId] = useState('');
@@ -133,6 +136,7 @@ export function CreateRequestModal({
           priority,
           justification: justification.trim(),
           neededDate: neededDate || undefined,
+          initialStatus: isAdmin ? initialStatus : 'PENDIENTE',
         });
       } else {
         const hoursNum = parseFloat(estimatedHours);
@@ -151,6 +155,7 @@ export function CreateRequestModal({
           priority,
           justification: justification.trim(),
           neededDate: startDate || undefined,
+          initialStatus: isAdmin ? initialStatus : 'PENDIENTE',
         });
       }
 
@@ -227,7 +232,11 @@ export function CreateRequestModal({
             </label>
             <select
               value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
+              onChange={(e) => {
+                setProjectId(e.target.value);
+                setSelectedMaterialId('');
+                setCustomMaterialName('');
+              }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-orange-500"
               required
             >
@@ -439,6 +448,26 @@ export function CreateRequestModal({
               </select>
             </div>
           </div>
+
+          {/* Admin Direct Approval Option */}
+          {isAdmin && (
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+              <label className="block font-bold text-amber-900 mb-1">
+                Estado Inicial (Privilegio Administrador General)
+              </label>
+              <select
+                value={initialStatus}
+                onChange={(e) => setInitialStatus(e.target.value as any)}
+                className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-xs font-bold text-amber-900 focus:ring-2 focus:ring-amber-500"
+              >
+                <option value="PENDIENTE">PENDIENTE (Dejar en cola de aprobación)</option>
+                <option value="APROBADA">APROBADA DIRECTAMENTE (Aprobación ejecutiva inmediata)</option>
+              </select>
+              <p className="text-[10.5px] text-amber-700 mt-1">
+                Como Administrador, puede autorizar la solicitud de inmediato para que pase a despacho de bodega o asignación de equipo.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block font-semibold text-slate-700 mb-1">

@@ -66,7 +66,7 @@ export function Navigation({
   const isPrintView = pathname?.endsWith('/imprimir');
   const isLoginView = pathname === '/login';
 
-  if (isPrintView || isLoginView) {
+  if (isPrintView || isLoginView || !currentUser) {
     return <main className="w-full min-h-screen bg-white">{children}</main>;
   }
 

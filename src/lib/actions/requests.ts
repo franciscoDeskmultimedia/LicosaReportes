@@ -52,10 +52,12 @@ export async function createWorkRequest(data: {
   priority?: 'BAJA' | 'NORMAL' | 'ALTA' | 'URGENTE';
   justification: string;
   neededDate?: string;
+  initialStatus?: 'PENDIENTE' | 'APROBADA';
 }) {
   const user = await getCurrentUser();
   const userName = user?.name || 'Usuario';
   const userRole = user?.role || 'RESIDENTE_OBRA';
+  const isAdmin = userRole === 'ADMIN';
 
   // Generate code e.g. SOL-MAT-024 o SOL-MAQ-024
   const prefix = data.type === 'MATERIAL' ? 'SOL-MAT' : 'SOL-MAQ';
@@ -87,6 +89,8 @@ export async function createWorkRequest(data: {
     }
   }
 
+  const isApprovedDirect = data.initialStatus === 'APROBADA' && isAdmin;
+
   const request = await prisma.workRequest.create({
     data: {
       code,
@@ -106,10 +110,14 @@ export async function createWorkRequest(data: {
       priority: data.priority || 'NORMAL',
       justification: data.justification,
       neededDate: data.neededDate ? new Date(data.neededDate) : null,
-      status: 'PENDIENTE',
+      status: isApprovedDirect ? 'APROBADA' : 'PENDIENTE',
       requestedById: user?.id || null,
       requestedByName: userName,
       requestedByRole: userRole,
+      reviewedById: isApprovedDirect ? user?.id || null : null,
+      reviewedByName: isApprovedDirect ? userName : null,
+      reviewedAt: isApprovedDirect ? new Date() : null,
+      reviewNotes: isApprovedDirect ? 'Aprobación directa inmediata por Administrador General' : null,
     },
     include: {
       project: true,
@@ -377,3 +385,56 @@ export async function deleteWorkRequest(requestId: string) {
   revalidatePath('/solicitudes');
   return { success: true };
 }
+
+export async function adminUpdateRequestStatus(
+  requestId: string,
+  newStatus: string,
+  notes?: string
+) {
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === 'ADMIN';
+
+  if (!isAdmin) {
+    throw new Error('Solo el Administrador General puede modificar directamente el estado de una solicitud');
+  }
+
+  const existing = await prisma.workRequest.findUnique({
+    where: { id: requestId },
+    include: { project: true },
+  });
+
+  if (!existing) {
+    throw new Error('Solicitud no encontrada');
+  }
+
+  const updated = await prisma.workRequest.update({
+    where: { id: requestId },
+    data: {
+      status: newStatus,
+      reviewedById: user.id,
+      reviewedByName: user.name,
+      reviewedAt: new Date(),
+      reviewNotes: notes || `Estado modificado manualmente por Administrador General a ${newStatus}`,
+    },
+  });
+
+  await recordAuditLog({
+    action: 'SOLICITUD_ESTADO_MODIFICADO',
+    entityType: 'WorkRequest',
+    entityId: updated.id,
+    description: `Administrador ${user.name} actualizó el estado de la solicitud ${updated.code} a ${newStatus}`,
+    projectId: existing.projectId,
+    metadata: {
+      code: updated.code,
+      previousStatus: existing.status,
+      newStatus,
+      notes,
+    },
+  });
+
+  revalidatePath('/solicitudes');
+  revalidatePath('/bodega');
+  revalidatePath('/maquinaria');
+  return updated;
+}
+

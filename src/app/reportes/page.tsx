@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getDailyReports } from '@/lib/actions/dailyReports';
 import { getProjects } from '@/lib/actions/projects';
 import { DailyReportsListView } from '@/components/DailyReportsListView';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,9 +12,9 @@ interface PageProps {
 }
 
 export default async function DailyReportsPage({ searchParams }: PageProps) {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
-  const isAdmin = currentUser?.role === 'ADMIN';
+  const isAdmin = currentUser.role === 'ADMIN';
   const allowedProjectIds = isAdmin
     ? []
     : currentUser?.assignments

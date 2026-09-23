@@ -3,14 +3,14 @@ import { redirect } from 'next/navigation';
 import { getProjects } from '@/lib/actions/projects';
 import { getContractors } from '@/lib/actions/contractors';
 import { ContractorsView } from '@/components/ContractorsView';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ContratistasPage() {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
-  if (currentUser?.role === 'BODEGUERO') {
+  if (currentUser.role === 'BODEGUERO') {
     redirect('/bodega');
   }
 

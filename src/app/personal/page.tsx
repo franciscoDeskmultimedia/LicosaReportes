@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getProjects } from '@/lib/actions/projects';
 import { getWorkers } from '@/lib/actions/workers';
 import { WorkersView } from '@/components/WorkersView';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,9 +12,9 @@ interface PageProps {
 }
 
 export default async function PersonalPage({ searchParams }: PageProps) {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
-  if (currentUser?.role === 'BODEGUERO') {
+  if (currentUser.role === 'BODEGUERO') {
     redirect('/bodega');
   }
 

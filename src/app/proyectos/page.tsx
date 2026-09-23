@@ -2,14 +2,14 @@ import React from 'react';
 import { redirect } from 'next/navigation';
 import { getProjects } from '@/lib/actions/projects';
 import { ProjectsListView } from '@/components/ProjectsListView';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ProjectsPage() {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
-  if (currentUser?.role === 'BODEGUERO') {
+  if (currentUser.role === 'BODEGUERO') {
     redirect('/bodega');
   }
 

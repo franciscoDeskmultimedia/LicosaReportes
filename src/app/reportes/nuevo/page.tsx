@@ -5,7 +5,7 @@ import { getPreviousReportStats } from '@/lib/actions/dailyReports';
 import { getMachineryList } from '@/lib/actions/machinery';
 import { getProjects } from '@/lib/actions/projects';
 import { NewDailyReportForm } from '@/components/NewDailyReportForm';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,9 +14,9 @@ interface PageProps {
 }
 
 export default async function NewDailyReportPage({ searchParams }: PageProps) {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
-  const isAdmin = currentUser?.role === 'ADMIN';
+  const isAdmin = currentUser.role === 'ADMIN';
   const residentProjectIds = isAdmin
     ? []
     : currentUser?.assignments

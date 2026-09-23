@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 import {
   TrendingUp,
   Clock,
@@ -33,10 +33,10 @@ interface PageProps {
 }
 
 export default async function DashboardPage({ searchParams }: PageProps) {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
   // If user only has BODEGUERO role in all their projects, redirect to /bodega
-  const isAdmin = currentUser?.role === 'ADMIN';
+  const isAdmin = currentUser.role === 'ADMIN';
   const assignedRoles = currentUser?.assignments?.map((a) => a.roleInProject) || [];
   if (currentUser?.role && currentUser.role !== 'ADMIN' && currentUser.role !== 'ESTANDAR') {
     assignedRoles.push(currentUser.role);

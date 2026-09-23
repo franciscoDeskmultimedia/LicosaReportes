@@ -28,7 +28,9 @@ import {
   dispatchMaterialRequest,
   updateMachineryRequestStatus,
   deleteWorkRequest,
+  adminUpdateRequestStatus,
 } from '@/lib/actions/requests';
+import { RotateCcw } from 'lucide-react';
 
 interface WorkRequestItem {
   id: string;
@@ -94,6 +96,7 @@ export function WorkRequestsView({
   machinery,
   selectedProjectId,
   currentUserRole,
+  isAdmin = false,
   canApprove,
   canDispatch,
 }: {
@@ -103,6 +106,7 @@ export function WorkRequestsView({
   machinery: MachineryOption[];
   selectedProjectId?: string;
   currentUserRole?: string;
+  isAdmin?: boolean;
   canApprove: boolean;
   canDispatch: boolean;
 }) {
@@ -129,6 +133,15 @@ export function WorkRequestsView({
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<WorkRequestItem | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  async function handleAdminForceStatus(requestId: string, newStatus: string) {
+    try {
+      await adminUpdateRequestStatus(requestId, newStatus);
+      router.refresh();
+    } catch (e: any) {
+      alert(e?.message || 'Error al cambiar estado');
+    }
+  }
 
   // Filtered requests
   const filtered = requests.filter((r) => {
@@ -579,6 +592,18 @@ export function WorkRequestsView({
                     </button>
                   )}
 
+                  {/* Reopen button for Admin on Rejected */}
+                  {isRejected && isAdmin && (
+                    <button
+                      onClick={() => handleAdminForceStatus(req.id, 'PENDIENTE')}
+                      title="Reabrir solicitud a estado Pendiente"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reabrir</span>
+                    </button>
+                  )}
+
                   {/* Delete button (Admin or requester when pending) */}
                   {(currentUserRole === 'ADMIN' || isPending) && (
                     <button
@@ -604,6 +629,7 @@ export function WorkRequestsView({
         materials={materials}
         machinery={machinery}
         defaultProjectId={selectedProjectId}
+        isAdmin={isAdmin}
       />
 
       {/* Modal Review (Approve / Reject) */}

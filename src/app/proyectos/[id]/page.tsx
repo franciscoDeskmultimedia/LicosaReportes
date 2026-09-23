@@ -4,7 +4,7 @@ import { getProjectById } from '@/lib/actions/projects';
 import { getWorkers } from '@/lib/actions/workers';
 import { getContractors } from '@/lib/actions/contractors';
 import { ProjectDetailView } from '@/components/ProjectDetailView';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,9 +13,9 @@ interface PageProps {
 }
 
 export default async function ProjectPage({ params }: PageProps) {
-  const currentUser = await getCurrentUser();
+  const currentUser = await requireAuth();
 
-  if (currentUser?.role === 'BODEGUERO') {
+  if (currentUser.role === 'BODEGUERO') {
     redirect('/bodega');
   }
 

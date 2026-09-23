@@ -1,5 +1,5 @@
 import React from 'react';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { getAuditLogs } from '@/lib/audit';
 import { getProjects } from '@/lib/actions/projects';
@@ -11,11 +11,7 @@ export const metadata = {
 };
 
 export default async function AuditoriaPage() {
-  const currentUser = await getCurrentUser();
-
-  if (!currentUser) {
-    redirect('/login');
-  }
+  const currentUser = await requireAuth();
 
   // Residentes y Administradores tienen acceso a la pista de auditoría
   const isAdmin = currentUser.role === 'ADMIN';
