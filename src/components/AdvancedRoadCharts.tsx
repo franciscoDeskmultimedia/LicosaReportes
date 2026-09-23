@@ -57,7 +57,7 @@ export function AdvancedRoadCharts({ reports }: { reports: DailyReportItem[] }) 
 
   // Chronological sort
   const sortedReports = useMemo(() => {
-    return [...reports].sort((a, b) => a.reportNumber - b.reportNumber);
+    return [...reports].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [reports]);
 
   const latestReport = sortedReports[sortedReports.length - 1];

@@ -65,11 +65,12 @@ export function DailyReportsListView({
   selectedProjectId?: string;
 }) {
   const router = useRouter();
-  const currentProject = projects.find((p) => p.id === selectedProjectId);
+  const isAll = !selectedProjectId || selectedProjectId === 'ALL';
+  const currentProject = isAll ? null : projects.find((p) => p.id === selectedProjectId);
 
   function handleProjectChange(newId: string) {
     if (newId === 'ALL') {
-      router.push('/reportes');
+      router.push('/reportes?projectId=ALL');
     } else {
       router.push(`/reportes?projectId=${newId}`);
     }
@@ -85,7 +86,7 @@ export function DailyReportsListView({
             <span>Control Diario de Ejecución</span>
           </div>
           <h1 className="text-xl md:text-2xl font-black text-slate-900">
-            Reportes Diarios de Obra (por Proyecto)
+            {isAll ? 'Reportes Diarios de Obra (Todas las Obras)' : `Reportes Diarios: ${currentProject?.name}`}
           </h1>
           <p className="text-xs text-slate-500">
             Bitácora oficial de avance físico-financiero, clima, maquinaria, personal y actividades
@@ -93,11 +94,11 @@ export function DailyReportsListView({
         </div>
 
         <Link
-          href={selectedProjectId ? `/reportes/nuevo?projectId=${selectedProjectId}` : '/reportes/nuevo'}
+          href={currentProject ? `/reportes/nuevo?projectId=${currentProject.id}` : '/reportes/nuevo'}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition-all"
         >
           <PlusCircle className="w-4 h-4" />
-          <span>+ Emitir Reporte para esta Obra</span>
+          <span>+ Emitir Nuevo Reporte</span>
         </Link>
       </div>
 
@@ -112,7 +113,7 @@ export function DailyReportsListView({
               Obra Seleccionada:
             </span>
             <h2 className="text-sm sm:text-base font-bold text-white line-clamp-1">
-              {currentProject ? currentProject.name : 'Todas las Obras Viales'}
+              {currentProject ? `[${currentProject.code}] ${currentProject.name}` : 'Todas las Obras Viales (Consolidado)'}
             </h2>
           </div>
         </div>
@@ -146,10 +147,14 @@ export function DailyReportsListView({
         {reports.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
             <FileSpreadsheet className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-            <h3 className="font-bold text-slate-700 text-sm">No hay reportes emitidos para esta obra</h3>
-            <p className="text-xs text-slate-500 mt-1">Haga clic en el botón para emitir el primer reporte diario de esta obra.</p>
+            <h3 className="font-bold text-slate-700 text-sm">
+              {isAll
+                ? 'No hay reportes emitidos en ninguna obra'
+                : `No hay reportes emitidos para ${currentProject?.name || 'esta obra'}`}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">Haga clic en el botón para emitir el primer reporte diario.</p>
             <Link
-              href={selectedProjectId ? `/reportes/nuevo?projectId=${selectedProjectId}` : '/reportes/nuevo'}
+              href={currentProject ? `/reportes/nuevo?projectId=${currentProject.id}` : '/reportes/nuevo'}
               className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white text-xs font-semibold rounded-lg"
             >
               + Emitir Primer Reporte

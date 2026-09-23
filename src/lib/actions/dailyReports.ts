@@ -5,9 +5,17 @@ import { revalidatePath } from 'next/cache';
 import { recordAuditLog } from '@/lib/audit';
 
 export async function getDailyReports(projectId?: string) {
+  const where: any = {};
+  if (projectId && projectId !== 'ALL') {
+    where.projectId = projectId;
+  }
+
   return await prisma.dailyReport.findMany({
-    where: projectId ? { projectId } : undefined,
-    orderBy: { reportNumber: 'desc' },
+    where,
+    orderBy: [
+      { date: 'desc' },
+      { reportNumber: 'desc' },
+    ],
     include: {
       project: true,
       rubroExecutions: {

@@ -34,18 +34,22 @@ export default async function DailyReportsPage({ searchParams }: PageProps) {
     projects = projects.filter((p) => allowedProjectIds.includes(p.id));
   }
 
-  // Validate activeProjectId: must be in allowed projects
-  let activeProjectId = projectId;
   const projectListIds = projects.map((p) => p.id);
 
-  if (activeProjectId && !projectListIds.includes(activeProjectId)) {
-    activeProjectId = projectListIds[0];
-  } else if (!activeProjectId && projects.length > 0) {
-    activeProjectId = projects[0].id;
+  // If projectId is 'ALL' or not specified, default to 'ALL' (Consolidado)
+  // If projectId is a valid project ID from allowed works, filter to that project
+  let activeProjectId = 'ALL';
+  if (projectId && projectId !== 'ALL' && projectListIds.includes(projectId)) {
+    activeProjectId = projectId;
   }
 
-  const reports = await getDailyReports(activeProjectId);
+  const filterProjectId = activeProjectId === 'ALL' ? undefined : activeProjectId;
+  let reports = await getDailyReports(filterProjectId);
 
+  // If not admin and viewing all, only include reports from allowed projects
+  if (!isAdmin && activeProjectId === 'ALL') {
+    reports = reports.filter((r) => allowedProjectIds.includes(r.projectId));
+  }
 
   return (
     <DailyReportsListView
