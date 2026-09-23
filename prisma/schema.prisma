@@ -1,0 +1,367 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // Cambiar a "postgresql" al migrar a base de datos de producción
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id                  String             @id @default(uuid())
+  code                String             @unique
+  name                String
+  contractor          String             // Consorcio Valle de la Virgen
+  client              String             // GAD Provincial del Guayas (Prefectura del Guayas)
+  inspectionCompany   String             // Fiscalización: ASOCIACION C-D
+  executingCompany    String             // Empresa Ejecutora / Frente: LICOSA
+  contractNumber      String             // EC-PREFGUAYAS-527225-CW-RFB
+  financingSource     String             // Financiamiento: BIRF 9722-EC (Banco Mundial)
+  roadSection         String             // Tramo / Segmento
+  contractAmount      Float              // Monto contractual asignado a LICOSA ($5,939,620.30)
+  durationDays        Int                // Plazo (240 días)
+  startDate           DateTime           // Fecha inicio contractual
+  status              String             @default("EN_EJECUCION") // EN_EJECUCION, SUSPENDIDO, FINALIZADO
+  
+  rubros              ProjectRubro[]
+  dailyReports        DailyReport[]
+  storageMovements    StorageMovement[]
+  materialItems       MaterialItem[]
+  storageReceipts     StorageReceipt[]
+  userAssignments     UserProjectAssignment[]
+  auditLogs           AuditLog[]
+  requests            WorkRequest[]
+  
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+}
+
+model ProjectRubro {
+  id                  String                @id @default(uuid())
+  projectId           String
+  project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rubroNumber         Int                   // N° Rubro: 8, 9, 29, 163, etc.
+  description         String
+  unit                String                // m3, m3-km, m, etc.
+  unitPrice           Float                 // Precio Unitario ($)
+  initialQuantity     Float                 // Cantidad contractual inicial
+  currentQuantity     Float                 // Cantidad vigente (incluye complementarios/adendas)
+  isPrincipal         Boolean               @default(true) // Rubro Principal vs Rubro No Principal
+  
+  adjustments         RubroAdjustment[]
+  dailyExecutions     DailyRubroExecution[]
+
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@unique([projectId, rubroNumber])
+}
+
+model RubroAdjustment {
+  id                  String       @id @default(uuid())
+  projectRubroId      String
+  projectRubro        ProjectRubro @relation(fields: [projectRubroId], references: [id], onDelete: Cascade)
+  type                String       // COMPLEMENTARY_CONTRACT (Contrato Complementario), WORK_ORDER (Orden de Trabajo), ADJUSTMENT (Reajuste)
+  quantityChange      Float        // Incremento o disminución
+  newUnitPrice        Float?       // Nuevo precio unitario si aplica
+  reason              String       // Justificación técnica
+  documentRef         String?      // N° Oficio / Resolución / Adenda
+  date                DateTime
+  approvedBy          String       // Fiscalización / Administrador de Contrato
+  createdAt           DateTime     @default(now())
+}
+
+model MaterialItem {
+  id                  String            @id @default(uuid())
+  projectId           String?           // Bodega asignada a la obra
+  project             Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  code                String            // e.g. MAT-001, TUB-48, DIESEL
+  name                String            // e.g. Tubería H.A. 48", Material de Préstamo, Combustible Diesel
+  category            String            // e.g. Áridos, Tuberías, Combustibles, Aceros, Químicos, Seguridad
+  unit                String            // e.g. m3, m, gal, kg, fundas
+  minStock            Float             @default(0)
+  currentStock        Float             @default(0)
+  location            String?           // Bodega Principal Pedro Carbo, Cantera La Cabuya, etc.
+  
+  movements           StorageMovement[]
+  requests            WorkRequest[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@unique([projectId, code])
+}
+
+model StorageReceipt {
+  id                  String            @id @default(uuid())
+  projectId           String?           // Obra a la que ingresa la compra
+  project             Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  receiptNumber       String            @unique // Factura, Comprobante o Guía de Remisión N°
+  supplier            String            // Nombre o RUC del proveedor
+  entryDateTime       DateTime          // Fecha y hora exacta de entrada a bodega
+  receivedBy          String            // Bodeguero / Recibidor de Obra
+  invoiceTotal        Float?            // Monto de la compra ($)
+  notes               String?           // Observaciones de recepción
+  documentUrl         String?           // URL o archivo adjunto
+  
+  movements           StorageMovement[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+}
+
+model StorageMovement {
+  id                  String          @id @default(uuid())
+  materialItemId      String
+  material            MaterialItem    @relation(fields: [materialItemId], references: [id], onDelete: Cascade)
+  type                String          // ENTRY (Ingreso por compra) o EXIT (Despacho a obra/frente)
+  quantity            Float
+  unitCost            Float?          // Costo unitario al ingresar
+  
+  receiptId           String?         // Solo para ingresos con comprobante
+  receipt             StorageReceipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+  
+  projectId           String?         // Obra de destino
+  project             Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  
+  targetWorkFront     String?         // Destino: e.g. Tramo 2, Cantera La Cabuya, Excavadora EX09
+  departureDateTime   DateTime?       // Fecha y hora de salida de bodega (para despachos)
+  dispatchedTo        String?         // Nombre de quien retira en bodega (operador, chofer, capataz)
+  authorizedBy        String?         // Nombre de quien aprueba el despacho (residente, jefe de bodega)
+  notes               String?
+  timestamp           DateTime        @default(now())
+}
+
+model Machinery {
+  id                  String                 @id @default(uuid())
+  code                String                 @unique // e.g. EX09, TR-08, RL-16, EX15, MULA-01
+  name                String                 // e.g. EXCAVADORA EX09
+  category            String                 // Excavadora, Tractor, Rodillo, Mula, Tractomula, Tanquero, Volqueta
+  plateOrSerial       String?
+  unit                String                 @default("hora") // hora, Unidad
+  status              String                 @default("OPERATIVO") // OPERATIVO, EN_MANTENIMIENTO, AVERIADO
+  totalHoursWorked    Float                  @default(0)
+  
+  dailyLogs           DailyReportMachinery[]
+  requests            WorkRequest[]
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+}
+
+model DailyReport {
+  id                      String                 @id @default(uuid())
+  projectId               String
+  project                 Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reportNumber            Int                    // N° de reporte: 24
+  date                    DateTime               // Fecha del reporte: lunes 21 sep 2026
+  roadSection             String                 // Tramo / Segmento
+  elapsedDays             Int                    // Días transcurridos (24)
+  totalDays               Int                    @default(240) // Plazo contractual
+  
+  // Avance económico del día y acumulado
+  totalExecutedDay        Float                  @default(0) // $21,388.51
+  totalExecutedAccum      Float                  @default(0) // $660,032.12
+  principalExecutedDay    Float                  @default(0) // $21,388.51
+  principalExecutedAccum  Float                  @default(0) // $470,312.24
+  nonPrincipalExecutedDay Float                  @default(0) // $0.00
+  nonPrincipalExecutedAccum Float                @default(0) // $189,719.88
+  progressPercentAccum    Float                  @default(0) // 11.11%
+  
+  // 1. Clima y EHS (Seguridad, Salud y Ambiente)
+  rainHoursDay            Float                  @default(0) // Horas de lluvia (día)
+  rainHoursNight          Float                  @default(0) // Horas de lluvia (noche)
+  lostRainHoursDay        Float                  @default(0) // Horas perdidas por lluvia
+  lostRainHoursAccum      Float                  @default(0) // Horas perdidas acum. por lluvia
+  safetyTalkMinutesDay    Float                  @default(5) // Tiempo charla diaria (min)
+  safetyTalkMinutesAccum  Float                  @default(105) // Tiempo charla acum. (min)
+  incidentsDay            Int                    @default(0) // Incidentes día
+  incidentsAccum          Int                    @default(0) // Incidentes acum.
+  accidentsDay            Int                    @default(0) // Accidentes día
+  accidentsAccum          Int                    @default(0) // Accidentes acum.
+  
+  // 6. Resumen de Actividades Realizadas Hoy
+  activitiesTodayVial         String?
+  activitiesTodayPavimento    String?
+  activitiesTodayDrenaje      String?
+  activitiesTodayPuentes      String?
+  activitiesTodayTopografia   String?
+  activitiesTodaySenalizacion String?
+  activitiesTodayAmbiental    String?
+  
+  // 7. Actividades a Realizar Mañana
+  activitiesTomorrowVial         String?
+  activitiesTomorrowPavimento    String?
+  activitiesTomorrowDrenaje      String?
+  activitiesTomorrowPuentes      String?
+  activitiesTomorrowTopografia   String?
+  activitiesTomorrowSenalizacion String?
+  activitiesTomorrowAmbiental    String?
+  
+  // 8. Novedades / Paralizaciones / Riesgos de Seguridad (GDO)
+  noveltiesRisks          String?
+  
+  // 9. Comentarios
+  contractorComments      String?
+  supervisorComments      String?
+  
+  // 11. Firmas
+  preparedByName          String                 @default("Ing. María Fernanda Ligua")
+  preparedByTitle         String                 @default("Ing. de Planillas")
+  reviewedByName          String                 @default("Ing. Jerson López")
+  reviewedByTitle         String                 @default("Residente de Obra")
+  
+  // Relaciones
+  machineryLogs           DailyReportMachinery[]
+  personnelLogs           DailyReportPersonnel[]
+  rubroExecutions         DailyRubroExecution[]
+  hourlyWeather           DailyHourlyWeather[]
+  
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+
+  @@unique([projectId, reportNumber])
+}
+
+model DailyReportMachinery {
+  id                  String       @id @default(uuid())
+  dailyReportId       String
+  dailyReport         DailyReport  @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  machineryId         String?
+  machinery           Machinery?   @relation(fields: [machineryId], references: [id], onDelete: SetNull)
+  description         String       // e.g. EXCAVADORA EX09, TRACTOR TR-08, etc.
+  unit                String       @default("hora") // hora, Unidad
+  quantity            Float        @default(1)
+  dayHours            Float        @default(0)
+  notes               String?
+}
+
+model DailyReportPersonnel {
+  id                  String       @id @default(uuid())
+  dailyReportId       String
+  dailyReport         DailyReport  @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  categoryRole        String       // Ingeniero Residente, Planilladora, Ayudante de Obra - Recibidor, Chofer Volqueta, etc.
+  quantity            Int          @default(1) // N° de trabajadores
+  manHoursDay         Float        @default(10) // H-Hombre día (e.g. 10, 8)
+  totalManHours       Float        @default(10) // quantity * manHoursDay
+}
+
+model DailyRubroExecution {
+  id                  String       @id @default(uuid())
+  dailyReportId       String
+  dailyReport         DailyReport  @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  projectRubroId      String
+  projectRubro        ProjectRubro @relation(fields: [projectRubroId], references: [id], onDelete: Cascade)
+  dayQuantity         Float        // Cant. día (e.g. 893.07)
+  accumQuantity       Float        // Cant. acum (e.g. 23,644.94)
+  dayAmount           Float        // Monto día ($) (e.g. 4,715.41)
+  accumAmount         Float        // Monto acum ($) (e.g. 124,845.28)
+}
+
+model DailyHourlyWeather {
+  id                  String       @id @default(uuid())
+  dailyReportId       String
+  dailyReport         DailyReport  @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  timeSlot            String       // "0-6", "6-8", "8-10", "10-12", "12-14", "14-16", "16-18", "18-24"
+  conditionCode       Int          @default(1) // 1 = Despejado, 2 = Nublado, 3 = Llovizna, 4 = Lluvia
+}
+
+model User {
+  id              String                  @id @default(uuid())
+  email           String                  @unique
+  name            String
+  passwordHash    String
+  role            String                  // ADMIN, RESIDENTE_OBRA, BODEGUERO, FISCALIZADOR
+  title           String?                 // e.g. "Ingeniero Residente", "Jefe de Bodega"
+  active          Boolean                 @default(true)
+  assignments     UserProjectAssignment[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+}
+
+model UserProjectAssignment {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  roleInProject String   @default("RESIDENTE_OBRA") // RESIDENTE_OBRA, BODEGUERO, FISCALIZADOR
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, projectId])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  action      String   // INGRESO_BODEGA, DESPACHO_BODEGA, REPORTE_DIARIO_CREADO, REAJUSTE_RUBRO, USUARIO_CREADO, USUARIO_MODIFICADO
+  entityType  String   // StorageReceipt, StorageMovement, DailyReport, RubroAdjustment, User
+  entityId    String?
+  description String   // Explicación humana de la acción
+  userId      String?
+  userName    String   // Nombre denormalizado
+  userEmail   String   // Correo denormalizado
+  userRole    String   // Rol del usuario al momento de la acción
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  metadata    String?  // JSON con detalles de la operación
+  createdAt   DateTime @default(now())
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model WorkRequest {
+  id              String        @id @default(uuid())
+  code            String        @unique // e.g. SOL-MAT-001, SOL-MAQ-002
+  type            String        // "MATERIAL" o "MAQUINARIA"
+  
+  projectId       String
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Detalle de Material
+  materialItemId  String?
+  materialItem    MaterialItem? @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
+  materialName    String?       // Insumo o material
+  requestedQty    Float?        // Cantidad solicitada
+  unit            String?       // m3, m, gal, kg, fundas, etc.
+  
+  // Detalle de Maquinaria
+  machineryId     String?
+  machinery       Machinery?    @relation(fields: [machineryId], references: [id], onDelete: SetNull)
+  machineryName   String?       // Nombre o modelo
+  estimatedHours  Float?        // Horas estimadas de trabajo
+  startDate       DateTime?     // Fecha requerida de inicio
+  endDate         DateTime?     // Fecha requerida de fin
+  withOperator    Boolean       @default(false) // ¿Requiere operador?
+  
+  // Atributos comunes
+  targetLocation  String?       // Frente de trabajo / tramo / cantera
+  priority        String        @default("NORMAL") // BAJA, NORMAL, ALTA, URGENTE
+  justification   String        // Justificación o motivo
+  neededDate      DateTime?     // Fecha requerida en obra
+  
+  status          String        @default("PENDIENTE") // PENDIENTE, APROBADA, RECHAZADA, DESPACHADA, EN_USO, FINALIZADA
+  
+  // Solicitante
+  requestedById   String?
+  requestedByName String        @default("Usuario")
+  requestedByRole String        @default("RESIDENTE_OBRA")
+  
+  // Aprobación / Revisión
+  reviewedById    String?
+  reviewedByName  String?
+  reviewedAt      DateTime?
+  reviewNotes     String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([projectId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+
