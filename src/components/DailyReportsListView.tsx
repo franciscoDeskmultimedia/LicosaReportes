@@ -47,6 +47,7 @@ interface DailyReportItem {
     id: string;
     dayQuantity: number;
     dayAmount: number;
+    accumAmount?: number;
     projectRubro: {
       rubroNumber: number;
       description: string;

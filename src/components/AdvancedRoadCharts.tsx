@@ -40,7 +40,7 @@ export interface DailyReportItem {
     id: string;
     dayQuantity: number;
     dayAmount: number;
-    accumAmount: number;
+    accumAmount?: number;
     projectRubro: {
       rubroNumber: number;
       description: string;

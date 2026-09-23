@@ -76,8 +76,10 @@ export async function createContractor(data: {
 export async function assignContractorToProject(data: {
   contractorId: string;
   projectId: string;
-  roleInProject: string;
+  roleInProject?: string;
   contractAmount?: number;
+  subcontractAmount?: number;
+  scope?: string;
   notes?: string;
 }) {
   const user = await getCurrentUser();
@@ -92,6 +94,10 @@ export async function assignContractorToProject(data: {
   });
   if (!project) throw new Error('Proyecto no encontrado');
 
+  const amount = data.contractAmount ?? data.subcontractAmount ?? null;
+  const role = data.roleInProject || 'SUBCONTRATISTA';
+  const notes = data.notes ?? data.scope ?? null;
+
   const assignment = await prisma.projectContractorAssignment.upsert({
     where: {
       contractorId_projectId: {
@@ -100,16 +106,16 @@ export async function assignContractorToProject(data: {
       },
     },
     update: {
-      roleInProject: data.roleInProject,
-      contractAmount: data.contractAmount ? Number(data.contractAmount) : null,
-      notes: data.notes || null,
+      roleInProject: role,
+      contractAmount: amount ? Number(amount) : null,
+      notes: notes,
     },
     create: {
       contractorId: data.contractorId,
       projectId: data.projectId,
-      roleInProject: data.roleInProject,
-      contractAmount: data.contractAmount ? Number(data.contractAmount) : null,
-      notes: data.notes || null,
+      roleInProject: role,
+      contractAmount: amount ? Number(amount) : null,
+      notes: notes,
     },
   });
 
@@ -117,12 +123,12 @@ export async function assignContractorToProject(data: {
     action: 'CONTRATISTA_ASIGNADO',
     entityType: 'ProjectContractorAssignment',
     entityId: assignment.id,
-    description: `Asignación de ${contractor.name} a la obra [${project.code}] como ${data.roleInProject}`,
+    description: `Asignación de ${contractor.name} a la obra [${project.code}] como ${role}`,
     projectId: project.id,
     metadata: {
       contractorName: contractor.name,
-      roleInProject: data.roleInProject,
-      contractAmount: data.contractAmount,
+      roleInProject: role,
+      contractAmount: amount,
       assignedBy: user?.name,
     },
   });
@@ -133,28 +139,35 @@ export async function assignContractorToProject(data: {
   return assignment;
 }
 
-export async function removeContractorFromProject(contractorId: string, projectId: string) {
+export async function removeContractorFromProject(
+  contractorIdOrAssignmentId: string,
+  projectId?: string
+) {
   const user = await getCurrentUser();
 
-  const assignment = await prisma.projectContractorAssignment.findUnique({
-    where: {
-      contractorId_projectId: {
-        contractorId,
-        projectId,
-      },
-    },
+  // Try finding by assignment ID first
+  let assignment = await prisma.projectContractorAssignment.findUnique({
+    where: { id: contractorIdOrAssignmentId },
     include: { contractor: true, project: true },
   });
+
+  // If not found and projectId is provided, look up by compound key
+  if (!assignment && projectId) {
+    assignment = await prisma.projectContractorAssignment.findUnique({
+      where: {
+        contractorId_projectId: {
+          contractorId: contractorIdOrAssignmentId,
+          projectId,
+        },
+      },
+      include: { contractor: true, project: true },
+    });
+  }
 
   if (!assignment) throw new Error('Asignación de contratista no encontrada');
 
   await prisma.projectContractorAssignment.delete({
-    where: {
-      contractorId_projectId: {
-        contractorId,
-        projectId,
-      },
-    },
+    where: { id: assignment.id },
   });
 
   await recordAuditLog({
@@ -162,7 +175,7 @@ export async function removeContractorFromProject(contractorId: string, projectI
     entityType: 'ProjectContractorAssignment',
     entityId: assignment.id,
     description: `Desvinculación del contratista ${assignment.contractor.name} de la obra [${assignment.project.code}]`,
-    projectId,
+    projectId: assignment.projectId,
     metadata: {
       contractorName: assignment.contractor.name,
       projectCode: assignment.project.code,
@@ -171,6 +184,7 @@ export async function removeContractorFromProject(contractorId: string, projectI
   });
 
   revalidatePath('/contratistas');
-  revalidatePath(`/proyectos/${projectId}`);
+  revalidatePath(`/proyectos/${assignment.projectId}`);
+  revalidatePath('/proyectos');
   return { success: true };
 }

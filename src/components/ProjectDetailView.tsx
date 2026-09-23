@@ -183,7 +183,7 @@ export function ProjectDetailView({
     if (!confirm(`¿Confirmas que deseas desvincular al contratista "${contractorName}" de esta obra?`)) return;
     try {
       setDeletingId(assignmentId);
-      await removeContractorFromProject(assignmentId);
+      await removeContractorFromProject(assignmentId, project.id);
       router.refresh();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error al desvincular contratista');

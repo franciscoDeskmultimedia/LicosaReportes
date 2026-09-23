@@ -84,8 +84,9 @@ export function AssignContractorToProjectModal({
       await assignContractorToProject({
         projectId,
         contractorId: contractorIdToAssign,
-        subcontractAmount: isNaN(amount as number) ? undefined : amount,
-        scope: scope.trim() || undefined,
+        roleInProject: 'SUBCONTRATISTA',
+        contractAmount: isNaN(amount as number) ? undefined : amount,
+        notes: scope.trim() || undefined,
       });
 
       router.refresh();
