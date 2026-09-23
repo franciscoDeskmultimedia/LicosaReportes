@@ -16,11 +16,8 @@ export function middleware(request: NextRequest) {
 
   const sessionCookie = request.cookies.get('licosa_session');
 
-  // If user is accessing /login
+  // If user is accessing /login, let them access the page so stale sessions don't cause an infinite redirect loop
   if (pathname === '/login') {
-    if (sessionCookie?.value) {
-      return NextResponse.redirect(new URL('/', request.url));
-    }
     return NextResponse.next();
   }
 
