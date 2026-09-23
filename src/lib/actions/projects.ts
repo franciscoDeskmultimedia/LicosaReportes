@@ -39,6 +39,19 @@ export async function getProjectById(id: string) {
       dailyReports: {
         orderBy: { reportNumber: 'desc' },
       },
+      workerAssignments: {
+        where: { status: 'ACTIVO' },
+        include: {
+          worker: true,
+        },
+        orderBy: { startDate: 'desc' },
+      },
+      contractors: {
+        include: {
+          contractor: true,
+        },
+        orderBy: { assignedAt: 'desc' },
+      },
     },
   });
 }
@@ -255,4 +268,35 @@ export async function addBulkProjectRubros(data: {
   revalidatePath('/reportes/nuevo');
   return { created: results.length, skipped: data.rubros.length - results.length };
 }
+
+export async function getGlobalRubrosCatalog() {
+  const allRubros = await prisma.projectRubro.findMany({
+    select: {
+      rubroNumber: true,
+      description: true,
+      unit: true,
+      unitPrice: true,
+      isPrincipal: true,
+      project: {
+        select: {
+          code: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: { rubroNumber: 'asc' },
+  });
+
+  // Unique rubros deduplicated by rubroNumber and normalized description
+  const uniqueMap = new Map<string, typeof allRubros[0]>();
+  for (const r of allRubros) {
+    const key = `${r.rubroNumber}_${r.description.trim().toLowerCase()}`;
+    if (!uniqueMap.has(key)) {
+      uniqueMap.set(key, r);
+    }
+  }
+
+  return Array.from(uniqueMap.values());
+}
+
 

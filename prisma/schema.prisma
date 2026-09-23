@@ -34,6 +34,8 @@ model Project {
   userAssignments     UserProjectAssignment[]
   auditLogs           AuditLog[]
   requests            WorkRequest[]
+  workerAssignments   WorkerAssignment[]
+  contractors         ProjectContractorAssignment[]
   
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -362,6 +364,68 @@ model WorkRequest {
   @@index([type])
   @@index([status])
   @@index([createdAt])
+}
+
+model Worker {
+  id              String             @id @default(uuid())
+  identification  String             @unique // Cédula o DNI
+  name            String             // Nombres y apellidos completos
+  roleCategory    String             // e.g. "Ingeniero Residente", "Topógrafo", "Cadenero", "Operador Excavadora", "Chofer Volqueta", "Ayudante de Obra", "Inspector Ambiental"
+  phone           String?
+  email           String?
+  active          Boolean            @default(true)
+  
+  assignments     WorkerAssignment[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model WorkerAssignment {
+  id              String    @id @default(uuid())
+  workerId        String
+  worker          Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedRole    String    // Rol específico en este frente de trabajo
+  startDate       DateTime  @default(now())
+  endDate         DateTime?
+  status          String    @default("ACTIVO") // ACTIVO, FINALIZADO, TRANSFERIDO
+  notes           String?
+  createdAt       DateTime  @default(now())
+
+  @@index([workerId])
+  @@index([projectId])
+  @@index([status])
+}
+
+model Contractor {
+  id              String                        @id @default(uuid())
+  name            String                        // Razón Social / Consorcio (e.g. Consorcio Vial del Guayas, Asfaltos & Vías S.A.)
+  ruc             String                        @unique
+  specialty       String                        // Movimiento de Tierras, Asfaltado, Puentes, Fiscalización, Transporte, Drenajes
+  contactPerson   String?                       // Representante Técnico / Administrador
+  phone           String?
+  email           String?
+  active          Boolean                       @default(true)
+  
+  projectAssignments ProjectContractorAssignment[]
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+}
+
+model ProjectContractorAssignment {
+  id              String      @id @default(uuid())
+  contractorId    String
+  contractor      Contractor  @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  roleInProject   String      @default("CONTRATISTA_PRINCIPAL") // CONTRATISTA_PRINCIPAL, SUBCONTRATISTA_ASFALTO, SUBCONTRATISTA_PUENTES, FISCALIZACION, PROVEEDOR_TRANSPORTE
+  contractAmount  Float?      // Monto subcontratado si aplica
+  notes           String?
+  assignedAt      DateTime    @default(now())
+
+  @@unique([contractorId, projectId])
+  @@index([projectId])
 }
 
 

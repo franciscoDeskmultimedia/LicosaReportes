@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:reset-clean": "npx tsx prisma/clean-reset.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

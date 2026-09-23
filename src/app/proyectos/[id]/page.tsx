@@ -1,6 +1,8 @@
 import React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { getProjectById } from '@/lib/actions/projects';
+import { getWorkers } from '@/lib/actions/workers';
+import { getContractors } from '@/lib/actions/contractors';
 import { ProjectDetailView } from '@/components/ProjectDetailView';
 import { getCurrentUser } from '@/lib/auth';
 
@@ -26,12 +28,23 @@ export default async function ProjectPage({ params }: PageProps) {
     }
   }
 
-  const project = await getProjectById(id);
+  const [project, allWorkers, allContractors] = await Promise.all([
+    getProjectById(id),
+    getWorkers(),
+    getContractors(),
+  ]);
 
   if (!project) {
     notFound();
   }
 
-  return <ProjectDetailView project={project} />;
+  return (
+    <ProjectDetailView
+      project={project as any}
+      allWorkers={allWorkers as any}
+      allContractors={allContractors as any}
+      currentUser={currentUser}
+    />
+  );
 }
 
