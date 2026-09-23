@@ -7,6 +7,7 @@ Esta guía detalla paso a paso cómo desplegar la plataforma **LICOSA - Control 
 ## 📌 1. ¿Por qué cambiar de SQLite a PostgreSQL para Vercel?
 
 En un entorno Serverless como Vercel:
+
 - Cada función o página se ejecuta en contenedores efímeros que se crean y destruyen dinámicamente.
 - Un archivo local `dev.db` de SQLite no persiste entre peticiones y no se comparte entre usuarios simultáneos.
 - Por ello, se requiere una base de datos relacional externa con conexión segura (SSL), como **Neon.tech** (recomendado por su capa gratuita y compatibilidad con serverless) o **Supabase**.
@@ -16,6 +17,7 @@ En un entorno Serverless como Vercel:
 ## 🚀 2. Paso a Paso para el Despliegue
 
 ### Paso 2.1: Crear la Base de Datos PostgreSQL en Neon.tech (Gratis)
+
 1. Ingresa a [https://neon.tech](https://neon.tech) y crea una cuenta o inicia sesión con GitHub.
 2. Haz clic en **Create Project**.
 3. Asigna un nombre (ej. `licosa-control-db`) y selecciona la región más cercana (ej. `US East / N. Virginia` o `US West / Oregon`).
@@ -32,6 +34,7 @@ En un entorno Serverless como Vercel:
 En tu repositorio local (o en tu rama antes de hacer push), edita el bloque `datasource db` en `prisma/schema.prisma`:
 
 **Cambiar:**
+
 ```prisma
 datasource db {
   provider = "sqlite"
@@ -40,6 +43,7 @@ datasource db {
 ```
 
 **Por:**
+
 ```prisma
 datasource db {
   provider = "postgresql"
@@ -97,12 +101,13 @@ git push origin main
 4. En **Framework Preset**, Vercel detectará automáticamente `Next.js`.
 5. En la sección **Environment Variables**, agrega las siguientes variables de entorno:
 
-| Variable | Valor | Descripción |
-| :--- | :--- | :--- |
-| `DATABASE_URL` | `postgresql://usuario:contraseña@...neon.tech/neondb?sslmode=require` | Cadena de conexión pooled de PostgreSQL |
-| `SESSION_SECRET` | *(Clave segura de al menos 32 caracteres aleatorios)* | Clave para encriptar cookies de sesión (`iron-session`) |
+| Variable         | Valor                                                                 | Descripción                                             |
+| :--------------- | :-------------------------------------------------------------------- | :------------------------------------------------------ |
+| `DATABASE_URL`   | `postgresql://usuario:contraseña@...neon.tech/neondb?sslmode=require` | Cadena de conexión pooled de PostgreSQL                 |
+| `SESSION_SECRET` | _(Clave segura de al menos 32 caracteres aleatorios)_                 | Clave para encriptar cookies de sesión (`iron-session`) |
 
 > 💡 **Tip:** Puedes generar un `SESSION_SECRET` seguro en tu terminal con:
+>
 > ```bash
 > node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 > ```
@@ -127,7 +132,9 @@ git push origin main
 ## 🛠️ 4. Preguntas Frecuentes y Solución de Problemas
 
 ### ¿Cómo vuelvo a encerar la base de datos en producción si quiero empezar desde cero?
+
 Si ya estás en producción y deseas purgar todos los datos ingresados para iniciar una obra real desde cero:
+
 1. En tu máquina local, establece `DATABASE_URL` apuntando a tu base de datos de producción:
    ```bash
    DATABASE_URL="tu_url_de_neon" npm run db:reset-clean
@@ -135,4 +142,7 @@ Si ya estás en producción y deseas purgar todos los datos ingresados para inic
 2. Esto borrará todos los reportes, kardex, solicitudes y proyectos, dejando listo el sistema con el usuario `admin@licosa.com`.
 
 ### ¿Por qué la numeración de reportes difiere entre proyectos (ej. Rep 05 vs Rep 24)?
+
 Cada obra tiene un contrato de fiscalización independiente. La numeración es correlativa y secuencial por obra (`reportNumber` por `projectId`), garantizando la trazabilidad histórica de cada frente de trabajo.
+
+todo
