@@ -38,6 +38,19 @@ export async function getProjectById(id: string) {
       },
       dailyReports: {
         orderBy: { reportNumber: 'desc' },
+        include: {
+          rubroExecutions: {
+            include: {
+              projectRubro: true,
+            },
+          },
+          personnelLogs: true,
+          machineryLogs: {
+            include: {
+              machinery: true,
+            },
+          },
+        },
       },
       workerAssignments: {
         where: { status: 'ACTIVO' },
@@ -54,6 +67,27 @@ export async function getProjectById(id: string) {
       },
     },
   });
+}
+
+export async function updateProjectStatus(projectId: string, status: string) {
+  const project = await prisma.project.update({
+    where: { id: projectId },
+    data: { status },
+  });
+
+  await recordAuditLog({
+    action: 'PROYECTO_ESTADO_ACTUALIZADO',
+    entityType: 'Project',
+    entityId: project.id,
+    description: `Cambio de estado del proyecto [${project.code}] a: ${status}`,
+    projectId: project.id,
+    metadata: { status },
+  });
+
+  revalidatePath('/proyectos');
+  revalidatePath(`/proyectos/${projectId}`);
+  revalidatePath('/');
+  return project;
 }
 
 export async function createProject(formData: {

@@ -39,14 +39,10 @@ interface NavItem {
 
 const allNavItems: NavItem[] = [
   { name: 'Panel General', href: '/', icon: LayoutDashboard, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
-  { name: 'Avance Acumulado', href: '/avance', icon: TrendingUp, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
-  { name: 'Proyectos & Rubros', href: '/proyectos', icon: FolderGit2, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
+  { name: 'Proyectos', href: '/proyectos', icon: FolderGit2, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   { name: 'Personal & Cuadrillas', href: '/personal', icon: UserCheck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   { name: 'Contratistas', href: '/contratistas', icon: Briefcase, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
-  { name: 'Solicitudes de Obra', href: '/solicitudes', icon: ClipboardList, roles: ['ADMIN', 'RESIDENTE_OBRA', 'BODEGUERO', 'FISCALIZADOR'] },
-  { name: 'Bodega & Almacén', href: '/bodega', icon: Package, roles: ['ADMIN', 'RESIDENTE_OBRA', 'BODEGUERO', 'FISCALIZADOR'] },
   { name: 'Maquinaria & Equipos', href: '/maquinaria', icon: Truck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
-  { name: 'Reportes Diarios', href: '/reportes', icon: FileSpreadsheet, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   { name: 'Auditoría & Logs', href: '/auditoria', icon: ShieldCheck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   { name: 'Usuarios & Roles', href: '/usuarios', icon: Users, roles: ['ADMIN'] },
 ];

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Printer, ArrowLeft, Download, FileSpreadsheet, CheckCircle2 } from 'lucide-react';
+import { Printer, ArrowLeft, Download, FileSpreadsheet, CheckCircle2, ExternalLink } from 'lucide-react';
 
 interface RubroExecution {
   id: string;
@@ -25,6 +25,7 @@ interface MachineryLog {
   unit: string;
   quantity: number;
   dayHours: number;
+  accumHours?: number;
   notes: string | null;
 }
 
@@ -108,7 +109,13 @@ interface DailyReportFull {
   hourlyWeather: HourlyWeather[];
 }
 
-export function OfficialReportDocument({ report }: { report: DailyReportFull }) {
+export function OfficialReportDocument({
+  report,
+  embedded = false,
+}: {
+  report: DailyReportFull;
+  embedded?: boolean;
+}) {
   const reportDate = new Date(report.date);
   const formattedDate = reportDate.toLocaleDateString('es-EC', {
     weekday: 'long',
@@ -124,25 +131,43 @@ export function OfficialReportDocument({ report }: { report: DailyReportFull }) 
       {/* Top action bar (hidden on print) */}
       <div className="no-print flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-3">
-          <Link
-            href="/reportes"
-            className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-            title="Volver al listado"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
+          {!embedded && (
+            <Link
+              href="/reportes"
+              className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+              title="Volver al listado"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+          )}
           <div>
-            <span className="text-xs text-slate-400 font-semibold uppercase">Formato Oficial de Obra</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-orange-600 font-bold uppercase tracking-wider">
+                {embedded ? 'Último Reporte Diario Emitido' : 'Formato Oficial de Obra'}
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                Versión Oficial HTML
+              </span>
+            </div>
             <h1 className="text-base font-bold text-slate-900">
-              Reporte Diario de Obra N° {String(report.reportNumber).padStart(3, '0')}
+              Reporte Diario de Obra N° {String(report.reportNumber).padStart(3, '0')} • {formattedDate}
             </h1>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {embedded && (
+            <Link
+              href={`/reportes/${report.id}`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-200"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Ver Pantalla Completa</span>
+            </Link>
+          )}
           <button
             onClick={() => window.print()}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md shadow-slate-900/20 transition-all"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md shadow-slate-900/20 transition-all cursor-pointer"
           >
             <Printer className="w-4 h-4 text-orange-400" />
             <span>Imprimir / Guardar en PDF</span>
@@ -281,17 +306,26 @@ export function OfficialReportDocument({ report }: { report: DailyReportFull }) 
                     <th className="py-1 px-1 text-center">Unidad</th>
                     <th className="py-1 px-1 text-center">Cantidad</th>
                     <th className="py-1 px-1 text-right">Horas día</th>
+                    <th className="py-1 px-1 text-right bg-slate-200/50">Horas acum.</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {report.machineryLogs.map((m) => (
-                    <tr key={m.id}>
-                      <td className="py-0.5 px-1.5 font-medium">{m.description}</td>
-                      <td className="py-0.5 px-1 text-center font-mono">{m.unit}</td>
-                      <td className="py-0.5 px-1 text-center font-mono">{m.quantity}</td>
-                      <td className="py-0.5 px-1 text-right font-mono font-bold">{m.dayHours > 0 ? m.dayHours.toFixed(1) : '-'}</td>
-                    </tr>
-                  ))}
+                  {report.machineryLogs.map((m) => {
+                    const accum = m.accumHours !== undefined ? m.accumHours : m.dayHours;
+                    return (
+                      <tr key={m.id}>
+                        <td className="py-0.5 px-1.5 font-medium">{m.description}</td>
+                        <td className="py-0.5 px-1 text-center font-mono">{m.unit}</td>
+                        <td className="py-0.5 px-1 text-center font-mono">{m.quantity}</td>
+                        <td className="py-0.5 px-1 text-right font-mono font-bold text-orange-700">
+                          {m.dayHours > 0 ? m.dayHours.toFixed(1) : '-'}
+                        </td>
+                        <td className="py-0.5 px-1 text-right font-mono font-bold text-slate-900 bg-slate-50/70">
+                          {accum > 0 ? accum.toFixed(1) : '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

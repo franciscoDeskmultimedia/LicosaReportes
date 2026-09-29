@@ -73,6 +73,74 @@ export async function createContractor(data: {
   return contractor;
 }
 
+export async function updateContractor(
+  id: string,
+  data: {
+    name: string;
+    ruc: string;
+    specialty: string;
+    contactPerson?: string;
+    phone?: string;
+    email?: string;
+    active?: boolean;
+  }
+) {
+  const user = await getCurrentUser();
+
+  const existing = await prisma.contractor.findUnique({
+    where: { id },
+  });
+  if (!existing) throw new Error('Contratista no encontrado');
+
+  if (data.ruc.trim() !== existing.ruc) {
+    const duplicate = await prisma.contractor.findUnique({
+      where: { ruc: data.ruc.trim() },
+    });
+    if (duplicate) {
+      throw new Error(`Ya existe otro contratista registrado con el RUC: ${data.ruc}`);
+    }
+  }
+
+  const updated = await prisma.contractor.update({
+    where: { id },
+    data: {
+      name: data.name.trim().toUpperCase(),
+      ruc: data.ruc.trim(),
+      specialty: data.specialty.trim(),
+      contactPerson: data.contactPerson?.trim() || null,
+      phone: data.phone?.trim() || null,
+      email: data.email?.trim() || null,
+      active: data.active !== undefined ? data.active : existing.active,
+    },
+  });
+
+  await recordAuditLog({
+    action: 'CONTRATISTA_ACTUALIZADO',
+    entityType: 'Contractor',
+    entityId: updated.id,
+    description: `Edición de contratista: ${updated.name} (RUC: ${updated.ruc}) - Especialidad: ${updated.specialty}`,
+    metadata: {
+      previous: {
+        name: existing.name,
+        ruc: existing.ruc,
+        specialty: existing.specialty,
+        contactPerson: existing.contactPerson,
+      },
+      updated: {
+        name: updated.name,
+        ruc: updated.ruc,
+        specialty: updated.specialty,
+        contactPerson: updated.contactPerson,
+      },
+      editedBy: user?.name,
+    },
+  });
+
+  revalidatePath('/contratistas');
+  revalidatePath('/proyectos');
+  return updated;
+}
+
 export async function assignContractorToProject(data: {
   contractorId: string;
   projectId: string;

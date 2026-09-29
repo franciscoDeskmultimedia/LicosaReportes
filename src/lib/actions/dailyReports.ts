@@ -30,7 +30,7 @@ export async function getDailyReports(projectId?: string) {
 }
 
 export async function getDailyReportById(id: string) {
-  return await prisma.dailyReport.findUnique({
+  const report = await prisma.dailyReport.findUnique({
     where: { id },
     include: {
       project: {
@@ -61,6 +61,54 @@ export async function getDailyReportById(id: string) {
       },
     },
   });
+
+  if (!report) return null;
+
+  // Requisito: Horas acumuladas de maquinaria hasta este reporte.
+  // Sería las horas de este reporte más las horas de reportes antiguos, sin actualizar con reportes posteriores.
+  const priorLogs = await prisma.dailyReportMachinery.findMany({
+    where: {
+      dailyReport: {
+        projectId: report.projectId,
+        reportNumber: { lte: report.reportNumber },
+      },
+    },
+    select: {
+      machineryId: true,
+      description: true,
+      dayHours: true,
+    },
+  });
+
+  const accumByMachId = new Map<string, number>();
+  const accumByDesc = new Map<string, number>();
+
+  for (const log of priorLogs) {
+    if (log.machineryId) {
+      accumByMachId.set(log.machineryId, (accumByMachId.get(log.machineryId) || 0) + (log.dayHours || 0));
+    }
+    const cleanDesc = log.description.trim().toUpperCase();
+    accumByDesc.set(cleanDesc, (accumByDesc.get(cleanDesc) || 0) + (log.dayHours || 0));
+  }
+
+  const machineryLogsWithAccum = report.machineryLogs.map((m) => {
+    let accum = 0;
+    if (m.machineryId && accumByMachId.has(m.machineryId)) {
+      accum = accumByMachId.get(m.machineryId)!;
+    } else {
+      const cleanDesc = m.description.trim().toUpperCase();
+      accum = accumByDesc.get(cleanDesc) || m.dayHours;
+    }
+    return {
+      ...m,
+      accumHours: accum,
+    };
+  });
+
+  return {
+    ...report,
+    machineryLogs: machineryLogsWithAccum,
+  };
 }
 
 export async function getPreviousReportStats(projectId: string) {
@@ -73,7 +121,33 @@ export async function getPreviousReportStats(projectId: string) {
     },
   });
 
-  return lastReport;
+  if (!lastReport) return null;
+
+  // Horas acumuladas históricas por maquinaria para precargar en nuevos reportes
+  const allPriorLogs = await prisma.dailyReportMachinery.findMany({
+    where: {
+      dailyReport: {
+        projectId,
+        reportNumber: { lte: lastReport.reportNumber },
+      },
+    },
+    select: {
+      machineryId: true,
+      dayHours: true,
+    },
+  });
+
+  const previousMachineryHours: Record<string, number> = {};
+  for (const log of allPriorLogs) {
+    if (log.machineryId) {
+      previousMachineryHours[log.machineryId] = (previousMachineryHours[log.machineryId] || 0) + (log.dayHours || 0);
+    }
+  }
+
+  return {
+    ...lastReport,
+    previousMachineryHours,
+  };
 }
 
 export async function createDailyReport(data: {

@@ -18,8 +18,10 @@ import {
   UserCheck,
   UserX,
   Briefcase,
+  Pencil,
 } from 'lucide-react';
 import { createWorker, assignWorkerToProject, removeWorkerFromProject } from '@/lib/actions/workers';
+import { EditWorkerModal } from '@/components/EditWorkerModal';
 
 interface WorkerAssignmentInfo {
   id: string;
@@ -97,6 +99,8 @@ export function WorkersView({
   const [assignNotes, setAssignNotes] = useState('');
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+  // Edit worker modal
+  const [editingWorker, setEditingWorker] = useState<WorkerItem | null>(null);
 
   // Filter workers
   const filtered = workers.filter((w) => {
@@ -390,16 +394,26 @@ export function WorkersView({
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
                 <button
                   type="button"
+                  onClick={() => setEditingWorker(w)}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-200 rounded-xl font-bold flex items-center gap-1 transition-all cursor-pointer"
+                  title="Editar datos de este trabajador"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Editar</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => {
                     setAssignTarget(w);
                     setAssignedRole(w.roleCategory);
                     setAssignNotes('');
                     if (projects.length > 0) setAssignProjectId(projects[0].id);
                   }}
-                  className="flex-1 py-1.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all"
+                  className="flex-1 py-1.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                 >
                   <ArrowRightLeft className="w-3.5 h-3.5 text-orange-400" />
-                  <span>{isAssigned ? 'Reasignar / Transferir' : 'Asignar a Obra'}</span>
+                  <span>{isAssigned ? 'Reasignar' : 'Asignar a Obra'}</span>
                 </button>
 
                 {isAssigned && (
@@ -407,7 +421,7 @@ export function WorkersView({
                     type="button"
                     onClick={() => handleRemoveAssignment(currentAssignment.id)}
                     title="Desvincular de la obra"
-                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                   >
                     <UserX className="w-4 h-4" />
                   </button>
@@ -417,6 +431,13 @@ export function WorkersView({
           );
         })}
       </div>
+
+      {/* Modal Edit Worker */}
+      <EditWorkerModal
+        isOpen={!!editingWorker}
+        onClose={() => setEditingWorker(null)}
+        worker={editingWorker}
+      />
 
       {/* Modal Create Worker */}
       {createModalOpen && (

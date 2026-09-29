@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -27,12 +27,26 @@ import {
   HardHat,
   CheckCircle2,
   AlertTriangle,
+  FileSpreadsheet,
+  Printer,
+  ChevronRight,
+  CloudSun,
+  Truck,
+  Clock,
+  Sparkles,
+  ExternalLink,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { AdjustRubroModal } from '@/components/AdjustRubroModal';
 import { AddRubroModal } from '@/components/AddRubroModal';
 import { BulkRubroImportModal } from '@/components/BulkRubroImportModal';
 import { AssignWorkerToProjectModal } from '@/components/AssignWorkerToProjectModal';
 import { AssignContractorToProjectModal } from '@/components/AssignContractorToProjectModal';
+import { EditWorkerModal } from '@/components/EditWorkerModal';
+import { EditContractorModal } from '@/components/EditContractorModal';
+import { OfficialReportDocument } from '@/components/OfficialReportDocument';
+import { DailyReportHtmlDashboard } from '@/components/DailyReportHtmlDashboard';
 import { removeWorkerFromProject } from '@/lib/actions/workers';
 import { removeContractorFromProject } from '@/lib/actions/contractors';
 
@@ -94,6 +108,51 @@ interface ProjectContractor {
   };
 }
 
+interface DailyReportData {
+  id: string;
+  reportNumber: number;
+  date: Date | string;
+  roadSection: string;
+  elapsedDays: number;
+  totalDays: number;
+  totalExecutedDay: number;
+  totalExecutedAccum: number;
+  progressPercentAccum: number;
+  rainHoursDay?: number;
+  lostRainHoursDay?: number;
+  activitiesTodayVial?: string | null;
+  activitiesTodayPavimento?: string | null;
+  activitiesTodayDrenaje?: string | null;
+  activitiesTodayTopografia?: string | null;
+  noveltiesRisks?: string | null;
+  preparedByName?: string;
+  reviewedByName?: string;
+  rubroExecutions?: Array<{
+    id: string;
+    dayQuantity: number;
+    dayAmount: number;
+    accumAmount?: number;
+    projectRubro: {
+      rubroNumber: number;
+      description: string;
+      unit: string;
+    };
+  }>;
+  personnelLogs?: Array<{
+    id: string;
+    categoryRole: string;
+    count: number;
+  }>;
+  machineryLogs?: Array<{
+    id: string;
+    machinery: {
+      code: string;
+      name: string;
+      category: string;
+    };
+  }>;
+}
+
 interface ProjectData {
   id: string;
   code: string;
@@ -108,26 +167,48 @@ interface ProjectData {
   contractAmount: number;
   durationDays: number;
   startDate: Date | string;
+  status?: string;
   rubros: ProjectRubro[];
+  dailyReports?: DailyReportData[];
   workerAssignments?: WorkerAssignment[];
   contractors?: ProjectContractor[];
 }
 
 export function ProjectDetailView({
   project,
+  progressData,
+  latestReportFull,
+  initialTab,
   allWorkers = [],
   allContractors = [],
   currentUser,
 }: {
   project: ProjectData;
+  progressData?: any;
+  latestReportFull?: any;
+  initialTab?: string;
   allWorkers?: any[];
   allContractors?: any[];
   currentUser?: any;
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'rubros' | 'personal' | 'contratistas' | 'modificaciones'>('rubros');
+
+  // Validate initialTab
+  const validTabs = ['resumen', 'reportes', 'rubros', 'personal', 'contratistas', 'modificaciones'];
+  const startingTab = initialTab && validTabs.includes(initialTab) ? (initialTab as any) : 'resumen';
+
+  const [activeTab, setActiveTab] = useState<
+    'resumen' | 'reportes' | 'rubros' | 'personal' | 'contratistas' | 'modificaciones'
+  >(startingTab);
+
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'principal' | 'non-principal'>('all');
+  const [reportSearch, setReportSearch] = useState('');
+
+  // Resumen de Avance por Rubros state
+  const [rubroSummarySearch, setRubroSummarySearch] = useState('');
+  const [rubroSummaryFilter, setRubroSummaryFilter] = useState<'all' | 'principal' | 'in_progress' | 'completed'>('all');
+  const [viewOfficialA4Format, setViewOfficialA4Format] = useState(false);
 
   // Modals
   const [addRubroOpen, setAddRubroOpen] = useState(false);
@@ -135,8 +216,92 @@ export function ProjectDetailView({
   const [selectedRubroForAdjust, setSelectedRubroForAdjust] = useState<ProjectRubro | null>(null);
   const [assignWorkerOpen, setAssignWorkerOpen] = useState(false);
   const [assignContractorOpen, setAssignContractorOpen] = useState(false);
+  const [editingWorker, setEditingWorker] = useState<any>(null);
+  const [editingContractor, setEditingContractor] = useState<any>(null);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Latest Daily Report
+  const allDailyReports = project.dailyReports || [];
+  const latestReport = allDailyReports[0];
+
+  // Calculated Progress metrics
+  const totalContractBudget = project.rubros.reduce(
+    (acc, r) => acc + r.currentQuantity * r.unitPrice,
+    project.contractAmount || 0
+  );
+  const totalExecutedAccum = latestReport?.totalExecutedAccum || progressData?.summary?.totalExecutedAccum || 0;
+  const progressPercent =
+    totalContractBudget > 0 ? (totalExecutedAccum / totalContractBudget) * 100 : 0;
+  const remainingBudget = Math.max(0, totalContractBudget - totalExecutedAccum);
+
+  const elapsedDays = latestReport?.elapsedDays || progressData?.summary?.elapsedDays || 0;
+  const timePercent = project.durationDays > 0 ? (elapsedDays / project.durationDays) * 100 : 0;
+  const spi = timePercent > 0 ? progressPercent / timePercent : 1;
+  const isHealthy = spi >= 0.9;
+
+  // Rubros progress list with safe fallback
+  const rubrosProgressList = useMemo(() => {
+    if (progressData?.rubros && progressData.rubros.length > 0) {
+      return progressData.rubros;
+    }
+    return project.rubros.map((r) => {
+      const accumQty = (allDailyReports || []).reduce((acc: number, rep: any) => {
+        const match = rep.rubroExecutions?.find(
+          (re: any) => re.projectRubro?.rubroNumber === r.rubroNumber || re.projectRubroId === r.id
+        );
+        return acc + (match?.dayQuantity || 0);
+      }, 0);
+      const currentQty = r.currentQuantity || r.initialQuantity || 0;
+      const unitPrice = r.unitPrice || 0;
+      const contractTotalAmount = currentQty * unitPrice;
+      const accumAmount = accumQty * unitPrice;
+      const remainingQuantity = Math.max(0, currentQty - accumQty);
+      const remainingAmount = remainingQuantity * unitPrice;
+      const pct = currentQty > 0 ? (accumQty / currentQty) * 100 : 0;
+      let status = 'SIN_INICIAR';
+      if (pct >= 100) status = 'COMPLETADO';
+      else if (accumQty > 0) status = 'EN_EJECUCION';
+
+      return {
+        id: r.id,
+        rubroNumber: r.rubroNumber,
+        description: r.description,
+        unit: r.unit,
+        unitPrice,
+        initialQuantity: r.initialQuantity,
+        currentQuantity: currentQty,
+        contractTotalAmount,
+        accumQuantity: accumQty,
+        accumAmount,
+        remainingQuantity,
+        remainingAmount,
+        progressPercent: pct,
+        status,
+        isPrincipal: r.isPrincipal,
+        adjustmentsCount: r.adjustments?.length || 0,
+      };
+    });
+  }, [progressData, project.rubros, allDailyReports]);
+
+  // Filtered rubros summary
+  const filteredRubrosSummary = useMemo(() => {
+    return rubrosProgressList.filter((r: any) => {
+      const q = rubroSummarySearch.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        r.description.toLowerCase().includes(q) ||
+        r.rubroNumber.toString().includes(q) ||
+        r.unit.toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+
+      if (rubroSummaryFilter === 'principal') return r.isPrincipal;
+      if (rubroSummaryFilter === 'in_progress') return r.accumQuantity > 0 && r.accumQuantity < r.currentQuantity;
+      if (rubroSummaryFilter === 'completed') return r.accumQuantity >= r.currentQuantity && r.currentQuantity > 0;
+      return true;
+    });
+  }, [rubrosProgressList, rubroSummarySearch, rubroSummaryFilter]);
 
   const filteredRubros = project.rubros.filter((r) => {
     const matchesSearch =
@@ -147,10 +312,14 @@ export function ProjectDetailView({
     return matchesSearch;
   });
 
-  const totalContractBudget = project.rubros.reduce(
-    (acc, r) => acc + r.currentQuantity * r.unitPrice,
-    0
-  );
+  const filteredReports = allDailyReports.filter((rep) => {
+    if (!reportSearch.trim()) return true;
+    const q = reportSearch.toLowerCase();
+    const matchesNum = rep.reportNumber.toString().includes(q);
+    const matchesDate = new Date(rep.date).toLocaleDateString('es-EC').includes(q);
+    const matchesSection = (rep.roadSection || '').toLowerCase().includes(q);
+    return matchesNum || matchesDate || matchesSection;
+  });
 
   const allAdjustments = project.rubros
     .flatMap((r) =>
@@ -204,59 +373,38 @@ export function ProjectDetailView({
           <span>Volver al Catálogo de Proyectos</span>
         </Link>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Prominent Direct Action: Create Daily Report */}
+          <Link
+            href={`/reportes/nuevo?projectId=${project.id}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition-all"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>+ Crear Reporte Diario</span>
+          </Link>
+
           <Link
             href={`/bodega?projectId=${project.id}`}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-300"
           >
-            <span>Bodega</span>
-          </Link>
-          <Link
-            href={`/reportes?projectId=${project.id}`}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-300"
-          >
-            <span>Reportes Diarios</span>
-          </Link>
-          <Link
-            href={`/reportes/nuevo?projectId=${project.id}`}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-xs transition-all"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>Emitir Reporte</span>
+            <span>Bodega de Obra</span>
           </Link>
 
           {/* Quick Action: Assign Staff */}
           <button
             onClick={() => setAssignWorkerOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-300 cursor-pointer"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>+ Asignar Personal</span>
+            <UserPlus className="w-4 h-4 text-emerald-600" />
+            <span>+ Personal</span>
           </button>
 
           {/* Quick Action: Assign Contractor */}
           <button
             onClick={() => setAssignContractorOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-300 cursor-pointer"
           >
-            <Briefcase className="w-4 h-4" />
+            <Briefcase className="w-4 h-4 text-indigo-600" />
             <span>+ Contratista</span>
-          </button>
-
-          {/* Add Rubro */}
-          <button
-            onClick={() => setAddRubroOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs transition-all"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>+ Asignar Rubro</span>
-          </button>
-
-          <button
-            onClick={() => setBulkImportOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition-all"
-          >
-            <FilePlus className="w-4 h-4 text-slate-500" />
-            <span>Importar Masivo</span>
           </button>
         </div>
       </div>
@@ -264,24 +412,33 @@ export function ProjectDetailView({
       {/* Contract Executive Profile Header */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 bg-orange-50 text-orange-700 rounded border border-orange-200">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs font-black px-2.5 py-0.5 bg-orange-50 text-orange-700 rounded border border-orange-200">
                 {project.code}
               </span>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {project.status === 'EN_EJECUCION' ? '● En Ejecución' : '⏸ Suspendido'}
+              </span>
               <span className="text-xs text-slate-500 font-medium">
-                Contrato: {project.contractNumber}
+                Contrato: <strong>{project.contractNumber}</strong>
               </span>
             </div>
             <h1 className="text-xl md:text-2xl font-black text-slate-900 leading-tight">
               {project.name}
             </h1>
+            <p className="text-xs text-slate-500">
+              Tramo: <strong className="text-slate-700">{project.roadSection || 'Vial'}</strong> • Frente Ejecutor: <strong className="text-slate-700">{project.executingCompany || 'LICOSA'}</strong>
+            </p>
           </div>
 
-          <div className="text-right">
-            <span className="text-xs text-slate-400 block font-medium">Monto Contractual Total</span>
-            <span className="text-2xl font-black text-slate-900">
-              ${project.contractAmount.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+          <div className="text-right flex-shrink-0">
+            <span className="text-xs text-slate-400 block font-medium">Monto Contractual Vigente</span>
+            <span className="text-2xl md:text-3xl font-black text-slate-900">
+              ${totalContractBudget.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-xs text-emerald-600 font-bold block mt-0.5">
+              ${totalExecutedAccum.toLocaleString('es-EC', { minimumFractionDigits: 2 })} ejecutados ({progressPercent.toFixed(2)}%)
             </span>
           </div>
         </div>
@@ -306,11 +463,35 @@ export function ProjectDetailView({
         </div>
       </div>
 
-      {/* Navigation Tabs Bar */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      {/* Internal Navigation Menu / Tabs Bar */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto no-scrollbar">
+        <button
+          onClick={() => setActiveTab('resumen')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'resumen'
+              ? 'bg-slate-900 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4 text-orange-400" />
+          <span>Resumen de Avance</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reportes')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'reportes'
+              ? 'bg-orange-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Reportes Diarios ({allDailyReports.length})</span>
+        </button>
+
         <button
           onClick={() => setActiveTab('rubros')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'rubros'
               ? 'bg-orange-600 text-white shadow-sm'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -322,7 +503,7 @@ export function ProjectDetailView({
 
         <button
           onClick={() => setActiveTab('personal')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'personal'
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -334,19 +515,19 @@ export function ProjectDetailView({
 
         <button
           onClick={() => setActiveTab('contratistas')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'contratistas'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
           <Briefcase className="w-4 h-4" />
-          <span>Contratistas & Subcontratos ({activeContractors.length})</span>
+          <span>Contratistas ({activeContractors.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('modificaciones')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'modificaciones'
               ? 'bg-slate-900 text-white shadow-sm'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -357,7 +538,835 @@ export function ProjectDetailView({
         </button>
       </div>
 
-      {/* TAB 1: RUBROS */}
+      {/* ========================================================================= */}
+      {/* TAB 1: RESUMEN DE AVANCE & ÚLTIMO REPORTE DIARIO                          */}
+      {/* ========================================================================= */}
+      {activeTab === 'resumen' && (
+        <div className="space-y-6">
+          {/* Executive Row: 1. Resumen de Avance del Proyecto | 2. Último Reporte Diario */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Panel Izquierdo: Resumen de Avance del Proyecto (7 cols) */}
+            <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-emerald-600" />
+                  <h2 className="text-base font-black text-slate-900">
+                    Resumen de Avance del Proyecto
+                  </h2>
+                </div>
+                <Link
+                  href={`/avance?projectId=${project.id}`}
+                  className="text-xs font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1"
+                >
+                  <span>Ver Curvas & Métricas</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
+              {/* 4 KPIs Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase block">Monto Contrato</span>
+                  <span className="font-mono font-bold text-slate-900 text-xs sm:text-sm">
+                    ${totalContractBudget.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80">
+                  <span className="text-[10px] text-emerald-800 font-semibold uppercase block">Planillaje Acum.</span>
+                  <span className="font-mono font-bold text-emerald-700 text-xs sm:text-sm">
+                    ${totalExecutedAccum.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase block">Saldo por Ejecutar</span>
+                  <span className="font-mono font-bold text-slate-700 text-xs sm:text-sm">
+                    ${remainingBudget.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200/80">
+                  <span className="text-[10px] text-blue-800 font-semibold uppercase block">Plazo Transcurrido</span>
+                  <span className="font-semibold text-blue-900 text-xs sm:text-sm">
+                    {elapsedDays} / {project.durationDays} d ({timePercent.toFixed(0)}%)
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress Bars */}
+              <div className="space-y-4 pt-1">
+                {/* Physical-Financial progress */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-baseline text-xs">
+                    <span className="text-slate-600 font-semibold">
+                      Avance Físico-Financiero Acumulado
+                    </span>
+                    <span className="font-mono font-black text-emerald-600 text-base">
+                      {progressPercent.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Time consumption */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-baseline text-xs">
+                    <span className="text-slate-600 font-semibold">
+                      Consumo de Plazo Contractual
+                    </span>
+                    <span className="font-mono font-bold text-blue-700">
+                      {timePercent.toFixed(1)}% ({elapsedDays} de {project.durationDays} días)
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.min(100, Math.max(0, timePercent))}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Performance Indicator Banner */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  {isHealthy ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  )}
+                  <div>
+                    <span className="font-bold text-slate-800">
+                      {isHealthy ? 'Obra en Plazo y Cronograma Normal' : 'Ritmo de Obra con Desfase Temporal'}
+                    </span>
+                    <span className="text-[11px] text-slate-500 block">
+                      Índice de Desempeño SPI: <strong>{spi.toFixed(2)}</strong> (Avance planillado vs Tiempo consumido)
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('rubros')}
+                  className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg font-bold text-[11px] transition-all cursor-pointer whitespace-nowrap"
+                >
+                  Ver Rubros →
+                </button>
+              </div>
+            </div>
+
+            {/* Panel Derecho: Último Reporte Diario (5 cols) */}
+            <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="w-5 h-5 text-orange-600" />
+                    <h2 className="text-base font-black text-slate-900">
+                      Último Reporte Diario
+                    </h2>
+                  </div>
+                  {latestReport && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800">
+                      N° {latestReport.reportNumber}
+                    </span>
+                  )}
+                </div>
+
+                {latestReport ? (
+                  <div className="space-y-3.5 text-xs">
+                    {/* Date and Section Banner */}
+                    <div className="p-3 bg-orange-50/70 border border-orange-200/80 rounded-xl flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-orange-800 font-bold uppercase tracking-wider block">
+                          Fecha de Emisión
+                        </span>
+                        <span className="font-black text-slate-900 text-sm">
+                          {new Date(latestReport.date).toLocaleDateString('es-EC', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-500 block">Día de Obra</span>
+                        <span className="font-bold text-slate-800">Día {latestReport.elapsedDays}</span>
+                      </div>
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-400 font-semibold block">Facturación Jornada</span>
+                        <span className="font-mono font-bold text-orange-600 text-sm">
+                          ${latestReport.totalExecutedDay.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-400 font-semibold block">Condición Climatológica</span>
+                        <div className="flex items-center gap-1 font-semibold text-slate-700 text-xs mt-0.5">
+                          <CloudSun className="w-3.5 h-3.5 text-amber-500" />
+                          <span>
+                            {latestReport.lostRainHoursDay
+                              ? `${latestReport.lostRainHoursDay}h perdidas lluvia`
+                              : 'Jornada Laborable'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Activities summary */}
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase block">
+                        Frentes & Actividades Reportadas
+                      </span>
+                      <p className="text-slate-700 line-clamp-3 leading-relaxed">
+                        {latestReport.activitiesTodayVial ||
+                          latestReport.activitiesTodayPavimento ||
+                          latestReport.activitiesTodayDrenaje ||
+                          'Trabajos de replanteo, movimiento de tierras y conformación de calzada.'}
+                      </p>
+                    </div>
+
+                    {/* Novelties */}
+                    {latestReport.noveltiesRisks && (
+                      <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200/80 text-amber-900 text-[11.5px] line-clamp-2">
+                        <strong>Novedad:</strong> {latestReport.noveltiesRisks}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center rounded-xl bg-slate-50 border border-dashed border-slate-300 space-y-3">
+                    <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto" />
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-xs">Sin reportes diarios registrados</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Esta obra aún no tiene reportes diarios emitidos.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                {latestReport ? (
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/reportes/${latestReport.id}`}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Ver Informe Oficial</span>
+                    </Link>
+                    <Link
+                      href={`/reportes/${latestReport.id}/imprimir`}
+                      target="_blank"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition-all"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Imprimir</span>
+                    </Link>
+                  </div>
+                ) : null}
+
+                <Link
+                  href={`/reportes/nuevo?projectId=${project.id}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-xs font-bold shadow-xs transition-all"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>+ Nuevo Reporte</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* RESUMEN DE AVANCE POR RUBROS (CON BUSCADOR Y FILTROS) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            {/* Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-200 bg-slate-50/50">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-orange-100 text-orange-600 rounded-xl">
+                      <Layers className="w-5 h-5" />
+                    </span>
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                      Resumen de Avance Físico por Rubros
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200/80 text-slate-700">
+                      {filteredRubrosSummary.length} de {rubrosProgressList.length} rubros
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Control cuantitativo acumulado, saldos restantes y porcentaje de avance por cada rubro contractual.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveTab('rubros')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                  >
+                    <span>Administrar Rubros</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Summary KPIs */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Rubros</p>
+                  <p className="text-lg font-extrabold text-slate-800 font-mono mt-0.5">
+                    {rubrosProgressList.length}
+                  </p>
+                </div>
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                  <p className="text-[11px] font-bold text-blue-500 uppercase tracking-wider">En Ejecución</p>
+                  <p className="text-lg font-extrabold text-blue-600 font-mono mt-0.5">
+                    {rubrosProgressList.filter((r: any) => r.accumQuantity > 0 && r.accumQuantity < r.currentQuantity).length}
+                  </p>
+                </div>
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                  <p className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">Completados</p>
+                  <p className="text-lg font-extrabold text-emerald-600 font-mono mt-0.5">
+                    {rubrosProgressList.filter((r: any) => r.accumQuantity >= r.currentQuantity && r.currentQuantity > 0).length}
+                  </p>
+                </div>
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                  <p className="text-[11px] font-bold text-orange-600 uppercase tracking-wider">Planillado Total</p>
+                  <p className="text-lg font-extrabold text-slate-900 font-mono mt-0.5">
+                    ${rubrosProgressList.reduce((acc: number, r: any) => acc + (r.accumAmount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+
+              {/* Search & Filter Bar */}
+              <div className="mt-4 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={rubroSummarySearch}
+                    onChange={(e) => setRubroSummarySearch(e.target.value)}
+                    placeholder="Buscar rubro por código, descripción o unidad..."
+                    className="w-full pl-10 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                  />
+                  {rubroSummarySearch && (
+                    <button
+                      onClick={() => setRubroSummarySearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title="Limpiar búsqueda"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                  <button
+                    onClick={() => setRubroSummaryFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex-shrink-0 ${
+                      rubroSummaryFilter === 'all'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Todos ({rubrosProgressList.length})
+                  </button>
+                  <button
+                    onClick={() => setRubroSummaryFilter('principal')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex-shrink-0 ${
+                      rubroSummaryFilter === 'principal'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Principales ({rubrosProgressList.filter((r: any) => r.isPrincipal).length})
+                  </button>
+                  <button
+                    onClick={() => setRubroSummaryFilter('in_progress')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex-shrink-0 ${
+                      rubroSummaryFilter === 'in_progress'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    En Ejecución ({rubrosProgressList.filter((r: any) => r.accumQuantity > 0 && r.accumQuantity < r.currentQuantity).length})
+                  </button>
+                  <button
+                    onClick={() => setRubroSummaryFilter('completed')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex-shrink-0 ${
+                      rubroSummaryFilter === 'completed'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Completados ({rubrosProgressList.filter((r: any) => r.accumQuantity >= r.currentQuantity && r.currentQuantity > 0).length})
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Rubros Progress Table */}
+            <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
+              {filteredRubrosSummary.length === 0 ? (
+                <div className="p-12 text-center">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                    <Search className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-700">No se encontraron rubros</h4>
+                  <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                    {rubroSummarySearch
+                      ? `No hay rubros que coincidan con "${rubroSummarySearch}". Intenta con otro término o limpia los filtros.`
+                      : 'No hay rubros que coincidan con el filtro seleccionado.'}
+                  </p>
+                  {(rubroSummarySearch || rubroSummaryFilter !== 'all') && (
+                    <button
+                      onClick={() => {
+                        setRubroSummarySearch('');
+                        setRubroSummaryFilter('all');
+                      }}
+                      className="mt-3 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                    >
+                      Restablecer filtros
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-xs z-10 border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3 font-bold text-slate-600 uppercase text-[10px] w-14 text-center">
+                        N°
+                      </th>
+                      <th className="py-2.5 px-3 font-bold text-slate-600 uppercase text-[10px] min-w-[220px]">
+                        Descripción del Rubro
+                      </th>
+                      <th className="py-2.5 px-2 font-bold text-slate-600 uppercase text-[10px] text-center w-14">
+                        Unidad
+                      </th>
+                      <th className="py-2.5 px-3 font-bold text-slate-600 uppercase text-[10px] text-right">
+                        P. Unitario
+                      </th>
+                      <th className="py-2.5 px-3 font-bold text-slate-600 uppercase text-[10px] text-right">
+                        Cant. Contrato
+                      </th>
+                      <th className="py-2.5 px-3 font-bold text-slate-600 uppercase text-[10px] text-right bg-orange-50/50">
+                        Cant. Acumulada
+                      </th>
+                      <th className="py-2.5 px-3 font-bold text-slate-600 uppercase text-[10px] text-right">
+                        Saldo Cantidad
+                      </th>
+                      <th className="py-2.5 px-3 font-bold text-slate-600 uppercase text-[10px] text-right">
+                        Monto Planillado
+                      </th>
+                      <th className="py-2.5 px-4 font-bold text-slate-600 uppercase text-[10px] min-w-[170px]">
+                        % Avance Físico
+                      </th>
+                      <th className="py-2.5 px-3 font-bold text-slate-600 uppercase text-[10px] text-center w-24">
+                        Estado
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredRubrosSummary.map((rubro: any) => {
+                      const pct = Math.min(100, Math.max(0, rubro.progressPercent || 0));
+                      const isComplete = pct >= 100;
+                      const isOver = (rubro.accumQuantity || 0) > (rubro.currentQuantity || 0);
+                      const inProgress = (rubro.accumQuantity || 0) > 0 && !isComplete;
+
+                      let statusBadge = (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                          Sin Iniciar
+                        </span>
+                      );
+                      if (isOver) {
+                        statusBadge = (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700">
+                            Superado
+                          </span>
+                        );
+                      } else if (isComplete) {
+                        statusBadge = (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                            Completado
+                          </span>
+                        );
+                      } else if (inProgress) {
+                        statusBadge = (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                            En Ejecución
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <tr
+                          key={rubro.id}
+                          className="hover:bg-slate-50/80 transition-colors group"
+                        >
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-600">
+                            <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                              {rubro.rubroNumber}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-slate-900 group-hover:text-orange-600 transition-colors">
+                                {rubro.description}
+                              </span>
+                              {rubro.isPrincipal && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded-sm text-[9px] font-extrabold uppercase bg-orange-100 text-orange-700 flex-shrink-0">
+                                  Principal
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-2 text-center">
+                            <span className="inline-block px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-600 font-mono text-[11px]">
+                              {rubro.unit}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                            ${rubro.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-800">
+                            {rubro.currentQuantity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-orange-600 bg-orange-50/30">
+                            {(rubro.accumQuantity || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                            {Math.max(0, (rubro.remainingQuantity ?? (rubro.currentQuantity - (rubro.accumQuantity || 0)))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                            ${(rubro.accumAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <div className="w-full">
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[11px] font-mono font-bold text-slate-700">
+                                  {(rubro.progressPercent || 0).toFixed(1)}%
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {(rubro.accumQuantity || 0).toFixed(1)} / {rubro.currentQuantity.toFixed(1)}
+                                </span>
+                              </div>
+                              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-300 ${
+                                    isComplete
+                                      ? 'bg-emerald-500'
+                                      : isOver
+                                      ? 'bg-purple-600'
+                                      : inProgress
+                                      ? 'bg-blue-600'
+                                      : 'bg-slate-300'
+                                  }`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {statusBadge}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            
+            {/* Table Footer */}
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+              <span>
+                Mostrando <strong>{filteredRubrosSummary.length}</strong> de <strong>{rubrosProgressList.length}</strong> rubros contractuales
+              </span>
+              <span className="font-mono text-slate-600">
+                Total acumulado en rubros: <strong>${rubrosProgressList.reduce((acc: number, r: any) => acc + (r.accumAmount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Quick Access to Daily Reports List */}
+          <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center flex-shrink-0">
+                <FileSpreadsheet className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-white">
+                  Bitácora de Reportes Diarios de esta Obra ({allDailyReports.length} informes)
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Accede al historial completo de planillaje diario, clima, cuadrillas de trabajo y maquinaria.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => setActiveTab('reportes')}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Ver Historial de Reportes
+              </button>
+              <Link
+                href={`/reportes/nuevo?projectId=${project.id}`}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/30 transition-all"
+              >
+                + Emitir Reporte Diario
+              </Link>
+            </div>
+          </div>
+
+          {/* HTML Version of Latest Daily Report (Visual, Consumible y Fácil de Leer) */}
+          <div className="space-y-4 pt-4 border-t border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-600 flex items-center justify-center text-white shadow-xs">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-slate-900">
+                      Último Reporte Diario Emitido (Versión HTML Visual)
+                    </h3>
+                    {latestReportFull && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
+                        N° {String(latestReportFull.reportNumber).padStart(3, '0')}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Visualización interactiva, amigable y consumible con gráficos, indicadores visuales de avance, personal, maquinaria y clima
+                  </p>
+                </div>
+              </div>
+
+              {latestReportFull && (
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start sm:self-auto">
+                  <button
+                    onClick={() => setViewOfficialA4Format(false)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      !viewOfficialA4Format
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Dashboard Visual
+                  </button>
+                  <button
+                    onClick={() => setViewOfficialA4Format(true)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      viewOfficialA4Format
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Formato A4 Impreso
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {latestReportFull ? (
+              viewOfficialA4Format ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl text-xs text-amber-800">
+                    <span>Estás visualizando la réplica formal en papel A4 para firmas físicas.</span>
+                    <button
+                      onClick={() => setViewOfficialA4Format(false)}
+                      className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer"
+                    >
+                      Cambiar a Dashboard Visual
+                    </button>
+                  </div>
+                  <div className="bg-slate-50/70 p-2 sm:p-6 rounded-2xl border border-slate-200 shadow-inner">
+                    <OfficialReportDocument report={latestReportFull} embedded={true} />
+                  </div>
+                </div>
+              ) : (
+                <DailyReportHtmlDashboard
+                  report={latestReportFull}
+                  project={project}
+                  onToggleOfficialView={() => setViewOfficialA4Format(true)}
+                  showingOfficialView={false}
+                />
+              )
+            ) : (
+              <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-8 text-center space-y-3">
+                <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto" />
+                <h4 className="font-bold text-slate-800 text-sm">Sin reportes diarios registrados en esta obra</h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Aún no se ha generado ningún reporte diario para esta obra. Cuando emitas el primer reporte, aquí se visualizará de forma automática la versión interactiva HTML y consumible.
+                </p>
+                <Link
+                  href={`/reportes/nuevo?projectId=${project.id}`}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-xs transition-all"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>+ Emitir Primer Reporte Diario</span>
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: HISTORIAL DE REPORTES DIARIOS (MENU PROPIO DEL PROYECTO)           */}
+      {/* ========================================================================= */}
+      {activeTab === 'reportes' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
+          {/* Header Bar */}
+          <div className="p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
+            <div className="flex items-center gap-3">
+              <FileSpreadsheet className="w-5 h-5 text-orange-600" />
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Reportes Diarios de Obra: [{project.code}]
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Bitácora oficial de avance diario, clima, personal y maquinaria de esta obra
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative min-w-[240px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Buscar por N° reporte o fecha..."
+                  value={reportSearch}
+                  onChange={(e) => setReportSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Direct Creation Button */}
+              <Link
+                href={`/reportes/nuevo?projectId=${project.id}`}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-orange-600/20 transition-all"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>+ Crear Reporte Diario</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Reports Table */}
+          {filteredReports.length === 0 ? (
+            <div className="p-12 text-center space-y-3">
+              <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto" />
+              <h3 className="font-bold text-slate-800 text-sm">
+                No hay reportes diarios para mostrar
+              </h3>
+              <p className="text-xs text-slate-500">
+                Emite el primer reporte diario para esta obra haciendo clic en el botón superior.
+              </p>
+              <Link
+                href={`/reportes/nuevo?projectId=${project.id}`}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-500 transition-all"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Emitir Primer Reporte</span>
+              </Link>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[11px] tracking-wider">
+                    <th className="py-3 px-4 w-20">N° Rep.</th>
+                    <th className="py-3 px-4">Fecha</th>
+                    <th className="py-3 px-4">Tramo Vial</th>
+                    <th className="py-3 px-3 text-right">Avance Día ($)</th>
+                    <th className="py-3 px-3 text-right">Planillaje Acum. ($)</th>
+                    <th className="py-3 px-3 text-center">% Acumulado</th>
+                    <th className="py-3 px-3 text-center">Clima</th>
+                    <th className="py-3 px-4 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredReports.map((rep) => (
+                    <tr key={rep.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                        <span className="px-2 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 font-black">
+                          #{rep.reportNumber}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="font-bold text-slate-900 block">
+                          {new Date(rep.date).toLocaleDateString('es-EC', {
+                            weekday: 'short',
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </span>
+                        <span className="text-[10px] text-slate-400">Día {rep.elapsedDays}</span>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 max-w-[200px] truncate">
+                        {rep.roadSection || project.roadSection}
+                      </td>
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-orange-600">
+                        ${rep.totalExecutedDay.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">
+                        ${rep.totalExecutedAccum.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3.5 px-3 text-center">
+                        <span className="font-mono font-bold px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {rep.progressPercentAccum.toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-3 text-center">
+                        <span className="text-[11px] text-slate-600">
+                          {rep.lostRainHoursDay ? `🌧️ ${rep.lostRainHoursDay}h lluvia` : '☀️ Normal'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Link
+                            href={`/reportes/${rep.id}`}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-bold hover:bg-slate-800 transition-colors text-[11px]"
+                            title="Ver documento oficial"
+                          >
+                            Ver Informe
+                          </Link>
+                          <Link
+                            href={`/reportes/${rep.id}/imprimir`}
+                            target="_blank"
+                            className="p-1 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors border border-slate-200"
+                            title="Imprimir informe oficial"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: RUBROS CONTRACTUALES                                               */}
+      {/* ========================================================================= */}
       {activeTab === 'rubros' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
           <div className="p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
@@ -388,7 +1397,7 @@ export function ProjectDetailView({
               <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg text-xs font-semibold">
                 <button
                   onClick={() => setFilterType('all')}
-                  className={`px-3 py-1 rounded-md transition-all ${
+                  className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                     filterType === 'all'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -398,7 +1407,7 @@ export function ProjectDetailView({
                 </button>
                 <button
                   onClick={() => setFilterType('principal')}
-                  className={`px-3 py-1 rounded-md transition-all ${
+                  className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                     filterType === 'principal'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -408,7 +1417,7 @@ export function ProjectDetailView({
                 </button>
                 <button
                   onClick={() => setFilterType('non-principal')}
-                  className={`px-3 py-1 rounded-md transition-all ${
+                  className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                     filterType === 'non-principal'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -420,10 +1429,18 @@ export function ProjectDetailView({
 
               <button
                 onClick={() => setAddRubroOpen(true)}
-                className="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs"
+                className="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
               >
                 <PlusCircle className="w-3.5 h-3.5" />
                 <span>+ Agregar Rubro</span>
+              </button>
+
+              <button
+                onClick={() => setBulkImportOpen(true)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold border border-slate-300 transition-all cursor-pointer flex items-center gap-1"
+              >
+                <FilePlus className="w-3.5 h-3.5 text-slate-500" />
+                <span>Importar Masivo</span>
               </button>
             </div>
           </div>
@@ -448,64 +1465,51 @@ export function ProjectDetailView({
                   const totalItemBudget = rubro.currentQuantity * rubro.unitPrice;
 
                   return (
-                    <tr key={rubro.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-bold text-orange-600">
+                    <tr
+                      key={rubro.id}
+                      className={`hover:bg-slate-50/80 transition-colors ${
+                        rubro.isPrincipal ? 'bg-white' : 'bg-slate-50/40 text-slate-600'
+                      }`}
+                    >
+                      <td className="py-3 px-4 font-mono font-bold text-slate-900">
                         {rubro.rubroNumber}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-900">
-                              {rubro.description}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          {rubro.isPrincipal ? (
+                            <span className="w-2 h-2 rounded-full bg-orange-600 flex-shrink-0" title="Rubro Principal" />
+                          ) : (
+                            <span className="w-2 h-2 rounded-full bg-slate-300 flex-shrink-0" title="Rubro No Principal" />
+                          )}
+                          <span className="font-medium text-slate-900">{rubro.description}</span>
+                          {isIncreased && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                              Adenda (+{(rubro.currentQuantity - rubro.initialQuantity).toFixed(2)})
                             </span>
-                            {rubro.isPrincipal ? (
-                              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-bold border border-blue-200">
-                                Principal
-                              </span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
-                                No Principal
-                              </span>
-                            )}
-                          </div>
-                          {rubro.adjustments.length > 0 && (
-                            <p className="text-[10px] text-amber-700 font-medium">
-                              • {rubro.adjustments.length} modificación(es) registrada(s)
-                            </p>
                           )}
                         </div>
                       </td>
-                      <td className="py-3.5 px-3 text-center font-mono text-slate-600">
+                      <td className="py-3 px-3 text-center font-mono text-slate-600">
                         {rubro.unit}
                       </td>
-                      <td className="py-3.5 px-3 text-right font-mono text-slate-800">
+                      <td className="py-3 px-3 text-right font-mono text-slate-700">
                         ${rubro.unitPrice.toFixed(2)}
                       </td>
-                      <td className="py-3.5 px-3 text-right font-mono text-slate-500">
-                        {rubro.initialQuantity.toLocaleString('es-EC')}
+                      <td className="py-3 px-3 text-right font-mono text-slate-500">
+                        {rubro.initialQuantity.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="py-3.5 px-3 text-right font-mono">
-                        <span
-                          className={`font-bold ${
-                            isIncreased
-                              ? 'text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded'
-                              : 'text-slate-900'
-                          }`}
-                        >
-                          {rubro.currentQuantity.toLocaleString('es-EC')}
-                        </span>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                        {rubro.currentQuantity.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">
+                      <td className="py-3 px-3 text-right font-mono font-bold text-emerald-600">
                         ${totalItemBudget.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-3 px-4 text-center">
                         <button
                           onClick={() => setSelectedRubroForAdjust(rubro)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 transition-colors shadow-xs"
-                          title="Registrar Ampliación o Contrato Complementario"
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-orange-50 text-slate-700 hover:text-orange-700 rounded border border-slate-200 text-[11px] font-semibold transition-colors cursor-pointer"
                         >
-                          <FilePlus className="w-3.5 h-3.5" />
-                          <span>Ampliación</span>
+                          Ajustar
                         </button>
                       </td>
                     </tr>
@@ -517,306 +1521,191 @@ export function ProjectDetailView({
         </div>
       )}
 
-      {/* TAB 2: PERSONAL & CUADRILLAS */}
+      {/* ========================================================================= */}
+      {/* TAB 4: PERSONAL & CUADRILLAS                                              */}
+      {/* ========================================================================= */}
       {activeTab === 'personal' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                <Users className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-slate-900">
-                  Personal Asignado a esta Obra
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Cuadrillas de trabajo, operadores de maquinaria y personal técnico asignados activamente
-                </p>
-              </div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <h2 className="text-base font-black text-slate-900">
+                Personal Asignado a la Obra ({activeWorkers.length})
+              </h2>
+              <p className="text-xs text-slate-500">
+                Nómina técnica, fiscalización y cuadrillas asignadas activamente a este proyecto
+              </p>
             </div>
-
             <button
               onClick={() => setAssignWorkerOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all self-start sm:self-auto"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold cursor-pointer"
             >
-              <UserPlus className="w-4 h-4" />
-              <span>+ Asignar Personal a esta Obra</span>
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>+ Asignar Personal</span>
             </button>
           </div>
 
-          {activeWorkers.length === 0 ? (
-            <div className="p-12 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center">
-                <HardHat className="w-8 h-8" />
-              </div>
-              <div className="max-w-md mx-auto space-y-1">
-                <h3 className="font-bold text-slate-900 text-sm">
-                  No hay personal asignado a esta obra todavía
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Vincule técnicos, maestros, choferes y operadores del padrón general a este proyecto para llevar el control de mano de obra.
-                </p>
-              </div>
-              <button
-                onClick={() => setAssignWorkerOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20"
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeWorkers.map((wa) => (
+              <div
+                key={wa.id}
+                className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between space-y-3"
               >
-                <UserPlus className="w-4 h-4" />
-                <span>Asignar el Primer Trabajador</span>
-              </button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[11px] tracking-wider">
-                    <th className="py-3 px-4">Trabajador</th>
-                    <th className="py-3 px-4">Oficio / Categoría</th>
-                    <th className="py-3 px-4">Cargo en esta Obra</th>
-                    <th className="py-3 px-4">Contacto</th>
-                    <th className="py-3 px-4">Fecha de Asignación</th>
-                    <th className="py-3 px-4 text-center">Estado</th>
-                    <th className="py-3 px-4 text-center">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {activeWorkers.map((asg) => (
-                    <tr key={asg.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div>
-                          <span className="font-bold text-slate-900 block text-xs">
-                            {asg.worker.name}
-                          </span>
-                          <span className="font-mono text-[10px] text-slate-500">
-                            CI: {asg.worker.identification}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                          {asg.worker.roleCategory}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="font-semibold text-emerald-800">
-                          {asg.assignedRole}
-                        </span>
-                        {asg.notes && (
-                          <p className="text-[10px] text-slate-400 italic mt-0.5">
-                            {asg.notes}
-                          </p>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600">
-                        {asg.worker.phone ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-[11px]">
-                            <Phone className="w-3 h-3 text-slate-400" />
-                            {asg.worker.phone}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 italic text-[11px]">Sin teléfono</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 font-mono text-[11px]">
-                        {new Date(asg.startDate).toLocaleDateString('es-EC')}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          ACTIVO EN OBRA
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => handleRemoveWorker(asg.id, asg.worker.name)}
-                          disabled={deletingId === asg.id}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-semibold border border-rose-200 transition-colors disabled:opacity-50"
-                          title="Desvincular de esta obra"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Desvincular</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                <div>
+                  <div className="flex justify-between items-start">
+                    <span className="font-mono text-[10px] text-slate-400">CI: {wa.worker.identification}</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                      {wa.assignedRole || wa.worker.roleCategory}
+                    </span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-sm mt-1">{wa.worker.name}</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Desde: {new Date(wa.startDate).toLocaleDateString('es-EC')}
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400">
+                    {wa.worker.phone || wa.worker.email || 'Sin contacto'}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingWorker(wa.worker)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                      title="Editar datos del trabajador"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      onClick={() => handleRemoveWorker(wa.id, wa.worker.name)}
+                      disabled={deletingId === wa.id}
+                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded text-xs font-semibold cursor-pointer transition-colors"
+                    >
+                      Desvincular
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* TAB 3: CONTRATISTAS */}
+      {/* ========================================================================= */}
+      {/* TAB 5: CONTRATISTAS & SUBCONTRATOS                                        */}
+      {/* ========================================================================= */}
       {activeTab === 'contratistas' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
-                <Briefcase className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-slate-900">
-                  Contratistas & Subcontratistas Vinculados
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Empresas ejecutoras, subcontratos de maquinaria, estructuras o asfalto en este proyecto
-                </p>
-              </div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <h2 className="text-base font-black text-slate-900">
+                Contratistas & Subcontratos de la Obra ({activeContractors.length})
+              </h2>
+              <p className="text-xs text-slate-500">
+                Empresas prestadoras de servicios, provisión de asfalto y transporte
+              </p>
             </div>
-
             <button
               onClick={() => setAssignContractorOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all self-start sm:self-auto"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold cursor-pointer"
             >
-              <Briefcase className="w-4 h-4" />
-              <span>+ Asignar Contratista</span>
+              <Briefcase className="w-3.5 h-3.5" />
+              <span>+ Contratista</span>
             </button>
           </div>
 
-          {activeContractors.length === 0 ? (
-            <div className="p-12 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-indigo-50 text-indigo-600 mx-auto flex items-center justify-center">
-                <Briefcase className="w-8 h-8" />
-              </div>
-              <div className="max-w-md mx-auto space-y-1">
-                <h3 className="font-bold text-slate-900 text-sm">
-                  No hay subcontratistas vinculados a esta obra
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Vincule empresas contratistas para registrar el alcance de sus trabajos y montos subcontratados.
-                </p>
-              </div>
-              <button
-                onClick={() => setAssignContractorOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20"
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {activeContractors.map((ac) => (
+              <div
+                key={ac.id}
+                className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between space-y-3"
               >
-                <Briefcase className="w-4 h-4" />
-                <span>Asignar Contratista</span>
-              </button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[11px] tracking-wider">
-                    <th className="py-3 px-4">Razón Social / Consorcio</th>
-                    <th className="py-3 px-4">Especialidad</th>
-                    <th className="py-3 px-4">Monto Subcontratado</th>
-                    <th className="py-3 px-4">Alcance / Tramo</th>
-                    <th className="py-3 px-4">Contacto</th>
-                    <th className="py-3 px-4 text-center">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {activeContractors.map((c) => (
-                    <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div>
-                          <span className="font-bold text-slate-900 block text-xs">
-                            {c.contractor.name}
-                          </span>
-                          <span className="font-mono text-[10px] text-slate-500">
-                            RUC: {c.contractor.ruc}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {c.contractor.specialty}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                        {c.contractAmount
-                          ? `$${c.contractAmount.toLocaleString('es-EC', { minimumFractionDigits: 2 })}`
-                          : 'No especificado'}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600">
-                        {c.notes || c.roleInProject || 'Sin detalle'}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 text-[11px]">
-                        {c.contractor.contactPerson && (
-                          <div className="font-medium text-slate-800">
-                            {c.contractor.contactPerson}
-                          </div>
-                        )}
-                        {c.contractor.phone && (
-                          <div className="font-mono text-[10px] text-slate-500">
-                            {c.contractor.phone}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => handleRemoveContractor(c.id, c.contractor.name)}
-                          disabled={deletingId === c.id}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-semibold border border-rose-200 transition-colors disabled:opacity-50"
-                          title="Desvincular contratista"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Desvincular</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                <div>
+                  <div className="flex justify-between items-start">
+                    <span className="font-mono text-[10px] text-slate-400">RUC: {ac.contractor.ruc}</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                      {ac.contractor.specialty}
+                    </span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-sm mt-1">{ac.contractor.name}</h4>
+                  <p className="text-xs text-slate-500 mt-1">Rol: {ac.roleInProject}</p>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500">
+                    Contacto: {ac.contractor.contactPerson || 'S/N'}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingContractor(ac.contractor)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                      title="Editar datos del contratista"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      onClick={() => handleRemoveContractor(ac.id, ac.contractor.name)}
+                      disabled={deletingId === ac.id}
+                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded text-xs font-semibold cursor-pointer transition-colors"
+                    >
+                      Desvincular
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* TAB 4: MODIFICACIONES */}
+      {/* ========================================================================= */}
+      {/* TAB 6: MODIFICACIONES CONTRACTUALES                                       */}
+      {/* ========================================================================= */}
       {activeTab === 'modificaciones' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-            <History className="w-5 h-5 text-orange-600" />
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Historial de Modificaciones Contractuales y Adendas
-              </h3>
+              <h2 className="text-base font-black text-slate-900">
+                Historial de Modificaciones Contractuales ({allAdjustments.length})
+              </h2>
               <p className="text-xs text-slate-500">
-                Trazabilidad oficial de aumentos de cantidades y contratos complementarios
+                Contratos complementarios, órdenes de trabajo y reajustes aprobados por fiscalización
               </p>
             </div>
           </div>
 
           {allAdjustments.length === 0 ? (
-            <div className="py-8 text-center text-xs text-slate-400 italic">
-              No se han registrado modificaciones ni adendas en este contrato.
-            </div>
+            <p className="text-xs text-slate-400 text-center py-6">
+              No se han registrado modificaciones contractuales o adendas en esta obra.
+            </p>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="space-y-3">
               {allAdjustments.map((adj) => (
                 <div
                   key={adj.id}
-                  className="py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                  className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1"
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold font-mono text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded text-[11px]">
-                        Rubro {adj.rubroNumber}
-                      </span>
-                      <span className="font-semibold text-slate-800">{adj.rubroDescription}</span>
-                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                        {adj.type === 'COMPLEMENTARY_CONTRACT'
-                          ? 'Contrato Complementario'
-                          : 'Ajuste de Obra'}
-                      </span>
-                    </div>
-                    <p className="text-slate-600 text-[11px] italic">"{adj.reason}"</p>
-                    <p className="text-[10px] text-slate-400">
-                      Aprobado por: {adj.approvedBy} • Ref: {adj.documentRef || 'Sin documento registrado'}
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="font-mono font-bold text-emerald-700 text-sm block">
-                      {adj.quantityChange > 0 ? '+' : ''}
-                      {adj.quantityChange.toLocaleString('es-EC')} {adj.unit}
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-900">
+                      Rubro N° {adj.rubroNumber}: {adj.rubroDescription}
                     </span>
-                    <span className="text-[10px] text-slate-400">
-                      {new Date(adj.date).toLocaleDateString('es-EC')}
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                      {adj.type}
                     </span>
                   </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>
+                      Variación: <strong>{adj.quantityChange > 0 ? `+${adj.quantityChange}` : adj.quantityChange} {adj.unit}</strong>
+                    </span>
+                    <span>Ref Doc: {adj.documentRef || 'S/N'}</span>
+                  </div>
+                  <p className="text-slate-500 pt-1">
+                    <strong>Motivo:</strong> {adj.reason} • <strong>Aprobado por:</strong> {adj.approvedBy} (
+                    {new Date(adj.date).toLocaleDateString('es-EC')})
+                  </p>
                 </div>
               ))}
             </div>
@@ -824,49 +1713,62 @@ export function ProjectDetailView({
         </div>
       )}
 
-      {/* Modals */}
+      {/* Modals for Rubros and Assignments */}
       {selectedRubroForAdjust && (
         <AdjustRubroModal
+          isOpen={!!selectedRubroForAdjust}
+          onClose={() => setSelectedRubroForAdjust(null)}
           rubroId={selectedRubroForAdjust.id}
           rubroNumber={selectedRubroForAdjust.rubroNumber}
           description={selectedRubroForAdjust.description}
           currentQuantity={selectedRubroForAdjust.currentQuantity}
           unit={selectedRubroForAdjust.unit}
           unitPrice={selectedRubroForAdjust.unitPrice}
-          isOpen={true}
-          onClose={() => setSelectedRubroForAdjust(null)}
         />
       )}
 
       <AddRubroModal
-        projectId={project.id}
         isOpen={addRubroOpen}
         onClose={() => setAddRubroOpen(false)}
+        projectId={project.id}
       />
 
       <BulkRubroImportModal
-        projectId={project.id}
-        projectCode={project.code}
         isOpen={bulkImportOpen}
         onClose={() => setBulkImportOpen(false)}
+        projectId={project.id}
+        projectCode={project.code}
       />
 
       <AssignWorkerToProjectModal
+        isOpen={assignWorkerOpen}
+        onClose={() => setAssignWorkerOpen(false)}
         projectId={project.id}
         projectName={project.name}
         projectCode={project.code}
         allWorkers={allWorkers}
-        isOpen={assignWorkerOpen}
-        onClose={() => setAssignWorkerOpen(false)}
       />
 
       <AssignContractorToProjectModal
+        isOpen={assignContractorOpen}
+        onClose={() => setAssignContractorOpen(false)}
         projectId={project.id}
         projectName={project.name}
         projectCode={project.code}
         allContractors={allContractors}
-        isOpen={assignContractorOpen}
-        onClose={() => setAssignContractorOpen(false)}
+      />
+
+      {/* Edit Worker & Contractor Modals */}
+      <EditWorkerModal
+        isOpen={!!editingWorker}
+        onClose={() => setEditingWorker(null)}
+        worker={editingWorker}
+      />
+
+      <EditContractorModal
+        isOpen={!!editingContractor}
+        onClose={() => setEditingContractor(null)}
+        contractor={editingContractor}
       />
     </div>
   );

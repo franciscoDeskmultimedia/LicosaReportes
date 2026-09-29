@@ -15,12 +15,14 @@ import {
   AlertCircle,
   ArrowRightLeft,
   Trash2,
+  Pencil,
 } from 'lucide-react';
 import {
   createContractor,
   assignContractorToProject,
   removeContractorFromProject,
 } from '@/lib/actions/contractors';
+import { EditContractorModal } from '@/components/EditContractorModal';
 
 interface ProjectAssignmentInfo {
   id: string;
@@ -43,6 +45,7 @@ interface ContractorItem {
   contactPerson?: string | null;
   phone?: string | null;
   email?: string | null;
+  active?: boolean;
   projectAssignments: ProjectAssignmentInfo[];
 }
 
@@ -80,6 +83,7 @@ export function ContractorsView({
   projects: ProjectOption[];
 }) {
   const [search, setSearch] = useState('');
+  const [editingContractor, setEditingContractor] = useState<ContractorItem | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [ruc, setRuc] = useState('');
@@ -323,7 +327,16 @@ export function ContractorsView({
             </div>
 
             {/* Actions */}
-            <div className="pt-3 border-t border-slate-100 flex justify-end">
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingContractor(c)}
+                className="py-1.5 px-3 bg-slate-100 hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Editar datos del contratista"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Editar</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -553,6 +566,13 @@ export function ContractorsView({
           </div>
         </div>
       )}
+
+      {/* Modal Edit Contractor */}
+      <EditContractorModal
+        isOpen={!!editingContractor}
+        onClose={() => setEditingContractor(null)}
+        contractor={editingContractor}
+      />
     </div>
   );
 }

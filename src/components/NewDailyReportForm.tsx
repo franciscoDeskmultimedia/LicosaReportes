@@ -55,6 +55,7 @@ interface PreviousReportData {
   lostRainHoursAccum: number;
   incidentsAccum: number;
   accidentsAccum: number;
+  previousMachineryHours?: Record<string, number>;
   rubroExecutions: Array<{
     projectRubroId: string;
     accumQuantity: number;
@@ -138,15 +139,19 @@ export function NewDailyReportForm({
   }
 
   // 4. Machinery Rows
-  const initialMachineryRows = machinery.map((m) => ({
-    machineryId: m.id,
-    code: m.code,
-    description: m.name,
-    unit: m.unit,
-    quantity: 1,
-    dayHours: '',
-    notes: '',
-  }));
+  const initialMachineryRows = machinery.map((m) => {
+    const prevHours = previousReport?.previousMachineryHours?.[m.id] || 0;
+    return {
+      machineryId: m.id,
+      code: m.code,
+      description: m.name,
+      unit: m.unit,
+      quantity: 1,
+      previousHours: prevHours,
+      dayHours: '',
+      notes: '',
+    };
+  });
   const [machineryRows, setMachineryRows] = useState(initialMachineryRows);
 
   function handleMachineChange(id: string, field: 'dayHours' | 'notes', value: string) {
@@ -696,40 +701,50 @@ export function NewDailyReportForm({
                 <tr className="bg-slate-100 text-slate-700 font-bold border-b text-[10px] uppercase tracking-wider">
                   <th className="py-2.5 px-4">Descripción del Equipo</th>
                   <th className="py-2.5 px-3">Unidad</th>
-                  <th className="py-2.5 px-3">Cantidad</th>
-                  <th className="py-2.5 px-3 bg-orange-50/80 text-orange-900">Horas Día</th>
+                  <th className="py-2.5 px-3 text-right">Horas Ant.</th>
+                  <th className="py-2.5 px-3 bg-orange-50/80 text-orange-900 text-right">Horas Día</th>
+                  <th className="py-2.5 px-3 text-right font-bold text-slate-900 bg-slate-200/50">Total Acum.</th>
                   <th className="py-2.5 px-4">Observaciones / Frente</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {machineryRows.map((m) => (
-                  <tr key={m.machineryId} className="hover:bg-slate-50/70">
-                    <td className="py-2.5 px-4 font-semibold text-slate-900">
-                      {m.description}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-500">{m.unit}</td>
-                    <td className="py-2.5 px-3 font-mono">{m.quantity}</td>
-                    <td className="py-2.5 px-3 bg-orange-50/40">
-                      <input
-                        type="number"
-                        step="any"
-                        placeholder="0.0"
-                        value={m.dayHours}
-                        onChange={(e) => handleMachineChange(m.machineryId, 'dayHours', e.target.value)}
-                        className="w-20 px-2 py-1 bg-white border border-orange-300 rounded font-mono font-bold text-right text-xs"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <input
-                        type="text"
-                        placeholder="Ej. Cantera La Cabuya producción"
-                        value={m.notes}
-                        onChange={(e) => handleMachineChange(m.machineryId, 'notes', e.target.value)}
-                        className="w-full px-2 py-1 bg-white border rounded text-xs"
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {machineryRows.map((m) => {
+                  const dayH = parseFloat(m.dayHours) || 0;
+                  const totalH = m.previousHours + dayH;
+                  return (
+                    <tr key={m.machineryId} className="hover:bg-slate-50/70">
+                      <td className="py-2.5 px-4 font-semibold text-slate-900">
+                        {m.description}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500">{m.unit}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500 text-right">
+                        {m.previousHours > 0 ? m.previousHours.toFixed(1) : '-'}
+                      </td>
+                      <td className="py-2.5 px-3 bg-orange-50/40 text-right">
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="0.0"
+                          value={m.dayHours}
+                          onChange={(e) => handleMachineChange(m.machineryId, 'dayHours', e.target.value)}
+                          className="w-20 px-2 py-1 bg-white border border-orange-300 rounded font-mono font-bold text-right text-xs"
+                        />
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-slate-900 bg-slate-50/60 text-right">
+                        {totalH > 0 ? totalH.toFixed(1) : '-'}
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <input
+                          type="text"
+                          placeholder="Ej. Cantera La Cabuya producción"
+                          value={m.notes}
+                          onChange={(e) => handleMachineChange(m.machineryId, 'notes', e.target.value)}
+                          className="w-full px-2 py-1 bg-white border rounded text-xs"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -86,6 +86,75 @@ export async function createWorker(data: {
   return worker;
 }
 
+export async function updateWorker(
+  id: string,
+  data: {
+    identification: string;
+    name: string;
+    roleCategory: string;
+    phone?: string;
+    email?: string;
+    active?: boolean;
+  }
+) {
+  const user = await getCurrentUser();
+
+  const existing = await prisma.worker.findUnique({
+    where: { id },
+  });
+  if (!existing) throw new Error('Personal no encontrado');
+
+  // If identification changed, check uniqueness
+  if (data.identification.trim() !== existing.identification) {
+    const duplicate = await prisma.worker.findUnique({
+      where: { identification: data.identification.trim() },
+    });
+    if (duplicate) {
+      throw new Error(`Ya existe otro trabajador con la cédula/DNI: ${data.identification}`);
+    }
+  }
+
+  const updated = await prisma.worker.update({
+    where: { id },
+    data: {
+      identification: data.identification.trim(),
+      name: data.name.trim().toUpperCase(),
+      roleCategory: data.roleCategory,
+      phone: data.phone?.trim() || null,
+      email: data.email?.trim() || null,
+      active: data.active !== undefined ? data.active : existing.active,
+    },
+  });
+
+  await recordAuditLog({
+    action: 'PERSONAL_ACTUALIZADO',
+    entityType: 'Worker',
+    entityId: updated.id,
+    description: `Edición de datos de personal: ${updated.name} (${updated.roleCategory}) - C.I.: ${updated.identification}`,
+    metadata: {
+      previous: {
+        name: existing.name,
+        roleCategory: existing.roleCategory,
+        identification: existing.identification,
+        phone: existing.phone,
+        email: existing.email,
+      },
+      updated: {
+        name: updated.name,
+        roleCategory: updated.roleCategory,
+        identification: updated.identification,
+        phone: updated.phone,
+        email: updated.email,
+      },
+      editedBy: user?.name,
+    },
+  });
+
+  revalidatePath('/personal');
+  revalidatePath('/proyectos');
+  return updated;
+}
+
 export async function assignWorkerToProject(data: {
   workerId: string;
   projectId: string;
