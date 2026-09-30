@@ -150,12 +150,23 @@ export function BulkRubroImportModal({ projectId, projectCode, isOpen, onClose }
               Agregue los rubros del contrato al proyecto. Los rubros con número duplicado serán omitidos.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href="/api/plantilla-excel"
+              download="Plantilla_Carga_Licosa.xlsx"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors"
+              title="Descargar plantilla Excel oficial de LICOSA"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Descargar Plantilla Excel</span>
+            </a>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Mode Tabs */}

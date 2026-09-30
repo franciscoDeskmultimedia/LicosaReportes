@@ -21,8 +21,10 @@ import {
   MoreVertical,
   Activity,
   HardHat,
+  Pencil,
 } from 'lucide-react';
 import { CreateProjectModal } from '@/components/CreateProjectModal';
+import { EditProjectModal } from '@/components/EditProjectModal';
 import { updateProjectStatus } from '@/lib/actions/projects';
 
 export interface ProjectItem {
@@ -46,6 +48,7 @@ export interface ProjectItem {
 export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
   const router = useRouter();
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -111,13 +114,25 @@ export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
           </p>
         </div>
 
-        <button
-          onClick={() => setCreateModalOpen(true)}
-          className="inline-flex items-center gap-2 px-5 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition-all cursor-pointer"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>+ Registrar Nuevo Proyecto</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href="/api/plantilla-excel"
+            download="Plantilla_Carga_Licosa.xlsx"
+            className="inline-flex items-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer border border-slate-700 hover:border-slate-600"
+            title="Descargar formato Excel para carga masiva de proyectos, rubros y reportes diarios"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <span>Plantilla Excel de Carga</span>
+          </a>
+
+          <button
+            onClick={() => setCreateModalOpen(true)}
+            className="inline-flex items-center gap-2 px-5 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition-all cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>+ Registrar Nuevo Proyecto</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -217,7 +232,9 @@ export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
             const lastReport = proj.dailyReports[0];
             const progress = lastReport?.progressPercentAccum || 0;
             const totalExecuted = lastReport?.totalExecutedAccum || 0;
-            const elapsedDays = lastReport?.elapsedDays || 0;
+            const elapsedDays =
+              lastReport?.elapsedDays ??
+              Math.max(0, Math.floor((new Date().getTime() - new Date(proj.startDate).getTime()) / 86400000));
             const timePct = proj.durationDays > 0 ? (elapsedDays / proj.durationDays) * 100 : 0;
             const isActive = proj.status === 'EN_EJECUCION';
 
@@ -287,26 +304,86 @@ export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
                     <div>
                       <span className="text-slate-400 block text-[11px]">Plazo de Obra:</span>
                       <span className="font-semibold text-slate-800">
-                        {elapsedDays} de {proj.durationDays} días ({timePct.toFixed(0)}%)
+                        {proj.durationDays} días ({elapsedDays} d transcurridos)
                       </span>
                     </div>
                   </div>
 
-                  {/* Progress bar */}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-500 font-medium">Avance Físico-Financiero:</span>
-                      <span className="font-mono font-bold text-emerald-600 text-sm">{progress.toFixed(2)}%</span>
+                  {/* Progress Indicators: Avance Físico & Consumo de Plazo */}
+                  <div className="space-y-3 pt-1">
+                    {/* Avance Físico-Financiero */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-600 font-semibold flex items-center gap-1.5">
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Avance Físico-Financiero:</span>
+                        </span>
+                        <span className="font-mono font-bold text-emerald-600 text-xs sm:text-sm">
+                          {progress.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
+                        <div
+                          className="bg-emerald-500 h-full rounded-full transition-all duration-700"
+                          style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10.5px] text-slate-400">
+                        <span>${totalExecuted.toLocaleString('es-EC', { minimumFractionDigits: 2 })} ejecutados</span>
+                        <span>{proj.rubros.length} rubros contractuales</span>
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
-                      <div
-                        className="bg-emerald-500 h-full rounded-full transition-all duration-700"
-                        style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>${totalExecuted.toLocaleString('es-EC', { minimumFractionDigits: 2 })} ejecutados</span>
-                      <span>{proj.rubros.length} rubros contractuales</span>
+
+                    {/* Consumo de Plazo Contractual */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-600 font-semibold flex items-center gap-1.5">
+                          <Clock className={`w-3.5 h-3.5 ${timePct >= 90 ? 'text-amber-600' : 'text-blue-600'}`} />
+                          <span>Consumo de Plazo Contractual:</span>
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {timePct >= 90 && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
+                              {timePct > 100 ? 'Excedido' : 'Por vencer'}
+                            </span>
+                          )}
+                          <span
+                            className={`font-mono font-bold text-xs sm:text-sm ${
+                              timePct > 100
+                                ? 'text-rose-600'
+                                : timePct >= 90
+                                ? 'text-amber-600'
+                                : 'text-blue-600'
+                            }`}
+                          >
+                            {timePct.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${
+                            timePct > 100
+                              ? 'bg-rose-500'
+                              : timePct >= 90
+                              ? 'bg-amber-500'
+                              : 'bg-blue-600'
+                          }`}
+                          style={{ width: `${Math.min(100, Math.max(0, timePct))}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10.5px] text-slate-400">
+                        <span>{elapsedDays} de {proj.durationDays} días consumidos</span>
+                        <span>
+                          {proj.durationDays - elapsedDays > 0 ? (
+                            `${proj.durationDays - elapsedDays} días restantes`
+                          ) : proj.durationDays - elapsedDays === 0 ? (
+                            <span className="text-amber-600 font-bold">Plazo cumplido</span>
+                          ) : (
+                            <span className="text-rose-600 font-bold">Excedido por {Math.abs(proj.durationDays - elapsedDays)} d</span>
+                          )}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -329,6 +406,15 @@ export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
                       <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
                       <span>Reportes</span>
                     </Link>
+
+                    <button
+                      onClick={() => setEditingProject(proj)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                      title="Editar datos del proyecto, plazos contractuales y montos"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-orange-600" />
+                      <span>Editar</span>
+                    </button>
                   </div>
 
                   <Link
@@ -350,6 +436,15 @@ export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
       />
+
+      {/* Modal for Editing Project */}
+      {editingProject && (
+        <EditProjectModal
+          project={editingProject}
+          isOpen={!!editingProject}
+          onClose={() => setEditingProject(null)}
+        />
+      )}
     </div>
   );
 }

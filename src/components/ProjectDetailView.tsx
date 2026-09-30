@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   FileSpreadsheet,
+  FileText,
   Printer,
   ChevronRight,
   CloudSun,
@@ -45,6 +46,7 @@ import { AssignWorkerToProjectModal } from '@/components/AssignWorkerToProjectMo
 import { AssignContractorToProjectModal } from '@/components/AssignContractorToProjectModal';
 import { EditWorkerModal } from '@/components/EditWorkerModal';
 import { EditContractorModal } from '@/components/EditContractorModal';
+import { EditProjectModal } from '@/components/EditProjectModal';
 import { OfficialReportDocument } from '@/components/OfficialReportDocument';
 import { DailyReportHtmlDashboard } from '@/components/DailyReportHtmlDashboard';
 import { removeWorkerFromProject } from '@/lib/actions/workers';
@@ -210,6 +212,10 @@ export function ProjectDetailView({
   const [rubroSummaryFilter, setRubroSummaryFilter] = useState<'all' | 'principal' | 'in_progress' | 'completed'>('all');
   const [viewOfficialA4Format, setViewOfficialA4Format] = useState(false);
 
+  // Tab Reportes: State for viewing any daily report in HTML or PDF
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [reportViewMode, setReportViewMode] = useState<'html' | 'pdf'>('html');
+
   // Modals
   const [addRubroOpen, setAddRubroOpen] = useState(false);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
@@ -218,12 +224,21 @@ export function ProjectDetailView({
   const [assignContractorOpen, setAssignContractorOpen] = useState(false);
   const [editingWorker, setEditingWorker] = useState<any>(null);
   const [editingContractor, setEditingContractor] = useState<any>(null);
+  const [editProjectOpen, setEditProjectOpen] = useState(false);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Latest Daily Report
   const allDailyReports = project.dailyReports || [];
   const latestReport = allDailyReports[0];
+
+  // Active Report for the inline viewer in Tab "Reportes"
+  const activeViewerReport = useMemo(() => {
+    if (!selectedReportId) return null;
+    const rep = allDailyReports.find((r) => r.id === selectedReportId) as any;
+    if (!rep) return null;
+    return rep.project ? rep : { ...rep, project };
+  }, [selectedReportId, allDailyReports, project]);
 
   // Calculated Progress metrics
   const totalContractBudget = project.rubros.reduce(
@@ -405,6 +420,16 @@ export function ProjectDetailView({
           >
             <Briefcase className="w-4 h-4 text-indigo-600" />
             <span>+ Contratista</span>
+          </button>
+
+          {/* Quick Action: Editar Proyecto */}
+          <button
+            onClick={() => setEditProjectOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-all shadow-sm cursor-pointer"
+            title="Editar plazos, fechas, montos y datos generales de la obra"
+          >
+            <Pencil className="w-3.5 h-3.5 text-orange-400" />
+            <span>Editar Proyecto</span>
           </button>
         </div>
       </div>
@@ -1265,6 +1290,125 @@ export function ProjectDetailView({
             </div>
           </div>
 
+          {/* Selected Report Viewer (HTML Dashboard / Official A4) */}
+          {activeViewerReport && (
+            <div id="visor-reporte-seleccionado" className="border-b-2 border-orange-200 bg-slate-50/70 p-4 sm:p-6 space-y-4">
+              {/* Controls bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex flex-col items-center justify-center font-bold flex-shrink-0 shadow-sm">
+                    <span className="text-[9px] uppercase tracking-wider text-orange-200">REP</span>
+                    <span className="text-sm font-black leading-none">#{activeViewerReport.reportNumber}</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Visualizando Reporte N° {String(activeViewerReport.reportNumber).padStart(3, '0')}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded text-[10.5px] font-bold bg-orange-100 text-orange-800">
+                        Día {activeViewerReport.elapsedDays} de {activeViewerReport.totalDays}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 capitalize">
+                      {new Date(activeViewerReport.date).toLocaleDateString('es-EC', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Segmented view switcher */}
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+                    <button
+                      onClick={() => setReportViewMode('html')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        reportViewMode === 'html'
+                          ? 'bg-white text-orange-700 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-orange-600" />
+                      <span>Versión HTML Visual</span>
+                    </button>
+                    <button
+                      onClick={() => setReportViewMode('pdf')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        reportViewMode === 'pdf'
+                          ? 'bg-white text-blue-700 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <FileText className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Versión PDF / A4 Oficial</span>
+                    </button>
+                  </div>
+
+                  {/* Independent page */}
+                  <Link
+                    href={`/reportes/${activeViewerReport.id}?view=${reportViewMode}`}
+                    target="_blank"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
+                    title="Abrir reporte en nueva pestaña"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">Página Completa</span>
+                  </Link>
+
+                  {/* Print */}
+                  <Link
+                    href={`/reportes/${activeViewerReport.id}/imprimir`}
+                    target="_blank"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-2xs transition-colors"
+                    title="Imprimir formato reglamentario"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-orange-400" />
+                    <span className="hidden md:inline">Imprimir</span>
+                  </Link>
+
+                  {/* Close Viewer */}
+                  <button
+                    onClick={() => setSelectedReportId(null)}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                    title="Cerrar visor"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Viewer Body */}
+              {reportViewMode === 'html' ? (
+                <div className="bg-slate-50/50 rounded-2xl border border-slate-200/80 p-1 sm:p-3">
+                  <DailyReportHtmlDashboard
+                    report={activeViewerReport}
+                    project={project}
+                    onToggleOfficialView={() => setReportViewMode('pdf')}
+                    showingOfficialView={false}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between bg-amber-50 border border-amber-200 px-4 py-2.5 rounded-xl text-xs text-amber-900">
+                    <span>Estás visualizando la réplica formal en papel A4 para firmas físicas.</span>
+                    <button
+                      onClick={() => setReportViewMode('html')}
+                      className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer"
+                    >
+                      Cambiar a Dashboard Visual
+                    </button>
+                  </div>
+                  <div className="bg-white p-2 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <OfficialReportDocument report={activeViewerReport as any} embedded={true} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Reports Table */}
           {filteredReports.length === 0 ? (
             <div className="p-12 text-center space-y-3">
@@ -1300,22 +1444,45 @@ export function ProjectDetailView({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredReports.map((rep) => (
-                    <tr key={rep.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr
+                      key={rep.id}
+                      className={`transition-colors ${
+                        selectedReportId === rep.id
+                          ? 'bg-orange-50/70 border-l-4 border-l-orange-500 font-medium'
+                          : 'hover:bg-slate-50/80'
+                      }`}
+                    >
                       <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                        <span className="px-2 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 font-black">
+                        <button
+                          onClick={() => {
+                            setSelectedReportId(rep.id);
+                            setReportViewMode('html');
+                          }}
+                          className="px-2 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 font-black hover:bg-orange-100 transition-colors cursor-pointer"
+                          title="Clic para ver versión HTML"
+                        >
                           #{rep.reportNumber}
-                        </span>
+                        </button>
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="font-bold text-slate-900 block">
-                          {new Date(rep.date).toLocaleDateString('es-EC', {
-                            weekday: 'short',
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </span>
-                        <span className="text-[10px] text-slate-400">Día {rep.elapsedDays}</span>
+                        <button
+                          onClick={() => {
+                            setSelectedReportId(rep.id);
+                            setReportViewMode('html');
+                          }}
+                          className="text-left cursor-pointer group"
+                          title="Clic para ver versión HTML"
+                        >
+                          <span className="font-bold text-slate-900 block group-hover:text-orange-600 transition-colors">
+                            {new Date(rep.date).toLocaleDateString('es-EC', {
+                              weekday: 'short',
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </span>
+                          <span className="text-[10px] text-slate-400">Día {rep.elapsedDays}</span>
+                        </button>
                       </td>
                       <td className="py-3.5 px-4 text-slate-600 max-w-[200px] truncate">
                         {rep.roadSection || project.roadSection}
@@ -1338,13 +1505,51 @@ export function ProjectDetailView({
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          {/* HTML Button */}
+                          <button
+                            onClick={() => {
+                              setSelectedReportId(rep.id);
+                              setReportViewMode('html');
+                            }}
+                            className={`px-2 py-1 rounded-lg font-bold transition-all text-[11px] cursor-pointer inline-flex items-center gap-1 ${
+                              selectedReportId === rep.id && reportViewMode === 'html'
+                                ? 'bg-orange-600 text-white shadow-2xs ring-2 ring-orange-300'
+                                : 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200'
+                            }`}
+                            title="Ver versión HTML interactiva"
+                          >
+                            <FileSpreadsheet className="w-3.5 h-3.5" />
+                            <span>HTML</span>
+                          </button>
+
+                          {/* PDF Button */}
+                          <button
+                            onClick={() => {
+                              setSelectedReportId(rep.id);
+                              setReportViewMode('pdf');
+                            }}
+                            className={`px-2 py-1 rounded-lg font-bold transition-all text-[11px] cursor-pointer inline-flex items-center gap-1 ${
+                              selectedReportId === rep.id && reportViewMode === 'pdf'
+                                ? 'bg-blue-600 text-white shadow-2xs ring-2 ring-blue-300'
+                                : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                            }`}
+                            title="Ver versión documento PDF / A4 oficial"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>PDF</span>
+                          </button>
+
+                          {/* Standalone page */}
                           <Link
                             href={`/reportes/${rep.id}`}
-                            className="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-bold hover:bg-slate-800 transition-colors text-[11px]"
-                            title="Ver documento oficial"
+                            target="_blank"
+                            className="p-1 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors border border-slate-200"
+                            title="Abrir en pestaña nueva"
                           >
-                            Ver Informe
+                            <ExternalLink className="w-3.5 h-3.5" />
                           </Link>
+
+                          {/* Print */}
                           <Link
                             href={`/reportes/${rep.id}/imprimir`}
                             target="_blank"
@@ -1770,6 +1975,15 @@ export function ProjectDetailView({
         onClose={() => setEditingContractor(null)}
         contractor={editingContractor}
       />
+
+      {/* Edit Project Modal */}
+      {editProjectOpen && (
+        <EditProjectModal
+          project={project}
+          isOpen={editProjectOpen}
+          onClose={() => setEditProjectOpen(false)}
+        />
+      )}
     </div>
   );
 }

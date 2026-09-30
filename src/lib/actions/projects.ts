@@ -50,6 +50,9 @@ export async function getProjectById(id: string) {
               machinery: true,
             },
           },
+          hourlyWeather: {
+            orderBy: { timeSlot: 'asc' },
+          },
         },
       },
       workerAssignments: {
@@ -82,6 +85,59 @@ export async function updateProjectStatus(projectId: string, status: string) {
     description: `Cambio de estado del proyecto [${project.code}] a: ${status}`,
     projectId: project.id,
     metadata: { status },
+  });
+
+  revalidatePath('/proyectos');
+  revalidatePath(`/proyectos/${projectId}`);
+  revalidatePath('/');
+  return project;
+}
+
+export async function updateProject(
+  projectId: string,
+  formData: {
+    code?: string;
+    name?: string;
+    contractor?: string;
+    client?: string;
+    inspectionCompany?: string;
+    executingCompany?: string;
+    contractNumber?: string;
+    financingSource?: string;
+    roadSection?: string;
+    contractAmount?: number;
+    durationDays?: number;
+    startDate?: string | Date;
+    status?: string;
+  }
+) {
+  const dataToUpdate: any = {};
+  if (formData.code !== undefined) dataToUpdate.code = formData.code;
+  if (formData.name !== undefined) dataToUpdate.name = formData.name;
+  if (formData.contractor !== undefined) dataToUpdate.contractor = formData.contractor;
+  if (formData.client !== undefined) dataToUpdate.client = formData.client;
+  if (formData.inspectionCompany !== undefined) dataToUpdate.inspectionCompany = formData.inspectionCompany;
+  if (formData.executingCompany !== undefined) dataToUpdate.executingCompany = formData.executingCompany;
+  if (formData.contractNumber !== undefined) dataToUpdate.contractNumber = formData.contractNumber;
+  if (formData.financingSource !== undefined) dataToUpdate.financingSource = formData.financingSource;
+  if (formData.roadSection !== undefined) dataToUpdate.roadSection = formData.roadSection;
+  if (formData.contractAmount !== undefined) dataToUpdate.contractAmount = formData.contractAmount;
+  if (formData.durationDays !== undefined) dataToUpdate.durationDays = formData.durationDays;
+  if (formData.startDate !== undefined) dataToUpdate.startDate = new Date(formData.startDate);
+  if (formData.status !== undefined) dataToUpdate.status = formData.status;
+
+  const project = await prisma.project.update({
+    where: { id: projectId },
+    data: dataToUpdate,
+  });
+
+  await recordAuditLog({
+    action: 'PROYECTO_ACTUALIZADO',
+    entityType: 'Project',
+    entityId: project.id,
+    description: `Actualización de datos contractuales del proyecto [${project.code}] ${project.name}`,
+    projectId: project.id,
+    metadata: formData,
   });
 
   revalidatePath('/proyectos');
