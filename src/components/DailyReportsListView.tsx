@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -14,9 +14,10 @@ import {
   Printer,
   Building2,
   FileText,
+  RefreshCw,
 } from 'lucide-react';
 import { AdvancedRoadCharts } from '@/components/AdvancedRoadCharts';
-
+import { ExcelReportSyncModal } from '@/components/ExcelReportSyncModal';
 
 interface ProjectOption {
   id: string;
@@ -67,6 +68,7 @@ export function DailyReportsListView({
   selectedProjectId?: string;
 }) {
   const router = useRouter();
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
   const isAll = !selectedProjectId || selectedProjectId === 'ALL';
   const currentProject = isAll ? null : projects.find((p) => p.id === selectedProjectId);
 
@@ -95,13 +97,25 @@ export function DailyReportsListView({
           </p>
         </div>
 
-        <Link
-          href={currentProject ? `/reportes/nuevo?projectId=${currentProject.id}` : '/reportes/nuevo'}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition-all"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>+ Emitir Nuevo Reporte</span>
-        </Link>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setSyncModalOpen(true)}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold shadow-xs hover:border-slate-400 transition-all"
+            title="Sincronizar reportes desde hojas RDO o bitácora Registro Diario"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Sincronizar desde Excel</span>
+          </button>
+
+          <Link
+            href={currentProject ? `/reportes/nuevo?projectId=${currentProject.id}` : '/reportes/nuevo'}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition-all"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>+ Emitir Nuevo Reporte</span>
+          </Link>
+        </div>
       </div>
 
       {/* Obra Selector Banner */}
@@ -279,6 +293,13 @@ export function DailyReportsListView({
           })
         )}
       </div>
+
+      <ExcelReportSyncModal
+        isOpen={syncModalOpen}
+        onClose={() => setSyncModalOpen(false)}
+        projects={projects}
+        defaultProjectId={selectedProjectId}
+      />
     </div>
   );
 }

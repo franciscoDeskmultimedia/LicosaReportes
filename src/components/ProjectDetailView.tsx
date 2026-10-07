@@ -42,6 +42,7 @@ import {
 import { AdjustRubroModal } from '@/components/AdjustRubroModal';
 import { AddRubroModal } from '@/components/AddRubroModal';
 import { BulkRubroImportModal } from '@/components/BulkRubroImportModal';
+import { ExcelReportSyncModal } from '@/components/ExcelReportSyncModal';
 import { AssignWorkerToProjectModal } from '@/components/AssignWorkerToProjectModal';
 import { AssignContractorToProjectModal } from '@/components/AssignContractorToProjectModal';
 import { EditWorkerModal } from '@/components/EditWorkerModal';
@@ -219,6 +220,7 @@ export function ProjectDetailView({
   // Modals
   const [addRubroOpen, setAddRubroOpen] = useState(false);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [excelSyncOpen, setExcelSyncOpen] = useState(false);
   const [selectedRubroForAdjust, setSelectedRubroForAdjust] = useState<ProjectRubro | null>(null);
   const [assignWorkerOpen, setAssignWorkerOpen] = useState(false);
   const [assignContractorOpen, setAssignContractorOpen] = useState(false);
@@ -1279,7 +1281,17 @@ export function ProjectDetailView({
                 />
               </div>
 
-              {/* Direct Creation Button */}
+              {/* Direct Creation & Excel Sync Buttons */}
+              <button
+                type="button"
+                onClick={() => setExcelSyncOpen(true)}
+                className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs hover:border-slate-400 transition-all"
+                title="Sincronizar reportes desde hojas RDO o bitácora Registro Diario"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Sincronizar desde Excel</span>
+              </button>
+
               <Link
                 href={`/reportes/nuevo?projectId=${project.id}`}
                 className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-orange-600/20 transition-all"
@@ -1943,6 +1955,13 @@ export function ProjectDetailView({
         onClose={() => setBulkImportOpen(false)}
         projectId={project.id}
         projectCode={project.code}
+      />
+
+      <ExcelReportSyncModal
+        isOpen={excelSyncOpen}
+        onClose={() => setExcelSyncOpen(false)}
+        projects={[{ id: project.id, code: project.code, name: project.name }]}
+        defaultProjectId={project.id}
       />
 
       <AssignWorkerToProjectModal
