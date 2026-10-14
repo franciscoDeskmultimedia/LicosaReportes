@@ -24,6 +24,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { CreateProjectModal } from '@/components/CreateProjectModal';
+import { CreateProjectFromExcelModal } from '@/components/CreateProjectFromExcelModal';
 import { EditProjectModal } from '@/components/EditProjectModal';
 import { updateProjectStatus } from '@/lib/actions/projects';
 
@@ -48,6 +49,7 @@ export interface ProjectItem {
 export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
   const router = useRouter();
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createExcelModalOpen, setCreateExcelModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -114,23 +116,32 @@ export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <a
             href="/api/plantilla-excel"
             download="Plantilla_Carga_Licosa.xlsx"
-            className="inline-flex items-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer border border-slate-700 hover:border-slate-600"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-300"
             title="Descargar formato Excel para carga masiva de proyectos, rubros y reportes diarios"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <span>Plantilla Excel de Carga</span>
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Plantilla Excel</span>
           </a>
 
           <button
+            onClick={() => setCreateExcelModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer"
+            title="Crear obra cargando un archivo Excel con la ficha del proyecto y el listado de rubros"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Crear Obra desde Excel</span>
+          </button>
+
+          <button
             onClick={() => setCreateModalOpen(true)}
-            className="inline-flex items-center gap-2 px-5 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition-all cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>+ Registrar Nuevo Proyecto</span>
+            <span>+ Registrar Manual</span>
           </button>
         </div>
       </div>
@@ -431,10 +442,16 @@ export function ProjectsListView({ projects }: { projects: ProjectItem[] }) {
         </div>
       )}
 
-      {/* Modal for Creating New Project */}
+      {/* Modal for Creating New Project Manually */}
       <CreateProjectModal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
+      />
+
+      {/* Modal for Creating New Project from Excel */}
+      <CreateProjectFromExcelModal
+        isOpen={createExcelModalOpen}
+        onClose={() => setCreateExcelModalOpen(false)}
       />
 
       {/* Modal for Editing Project */}

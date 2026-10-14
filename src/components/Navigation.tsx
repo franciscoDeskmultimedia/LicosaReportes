@@ -26,9 +26,12 @@ import {
   Briefcase,
   TrendingUp,
   ClipboardList,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
 import { logoutAction } from '@/lib/actions/auth';
 import { CurrentUser } from '@/lib/authTypes';
+import { useAiChat } from '@/components/chat/AiChatContext';
 
 interface NavItem {
   name: string;
@@ -40,13 +43,13 @@ interface NavItem {
 const allNavItems: NavItem[] = [
   { name: 'Panel General', href: '/', icon: LayoutDashboard, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   { name: 'Proyectos', href: '/proyectos', icon: FolderGit2, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
-  { name: 'Personal & Cuadrillas', href: '/personal', icon: UserCheck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
-  { name: 'Contratistas', href: '/contratistas', icon: Briefcase, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
+  // Ocultados temporalmente por solicitud del usuario:
+  // { name: 'Personal & Cuadrillas', href: '/personal', icon: UserCheck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
+  // { name: 'Contratistas', href: '/contratistas', icon: Briefcase, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   { name: 'Maquinaria & Equipos', href: '/maquinaria', icon: Truck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
-  { name: 'Auditoría & Logs', href: '/auditoria', icon: ShieldCheck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
+  { name: 'Auditoria & Logs', href: '/auditoria', icon: ShieldCheck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   { name: 'Usuarios & Roles', href: '/usuarios', icon: Users, roles: ['ADMIN'] },
 ];
-
 
 export function Navigation({
   children,
@@ -57,6 +60,7 @@ export function Navigation({
 }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { toggleChat } = useAiChat();
 
   // If path is a pure print view or login view, render clean full width
   const isPrintView = pathname?.endsWith('/imprimir');
@@ -102,22 +106,51 @@ export function Navigation({
       {/* Sidebar for Desktop */}
       <aside className="no-print hidden md:flex md:w-64 flex-col fixed inset-y-0 z-50 bg-slate-900 border-r border-slate-800 text-white">
         {/* Brand Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-orange-600 flex items-center justify-center shadow-lg shadow-orange-600/30">
-              <HardHat className="w-6 h-6 text-white" />
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-3 group">
+            <img
+              src="/logo.png"
+              alt="LICOSA"
+              className="h-11 w-auto object-contain transition-transform group-hover:scale-105 drop-shadow-sm"
+            />
+            <div className="border-l border-slate-700 pl-3">
+              <span className="text-[10px] text-orange-400 font-bold uppercase tracking-wider block">
+                Control Vial
+              </span>
+              <span className="text-[9px] text-slate-400 block font-medium">
+                & Obra Civil
+              </span>
             </div>
-            <div>
-              <h1 className="font-black text-lg tracking-wider text-white">LICOSA</h1>
-              <p className="text-xs text-orange-400 font-semibold uppercase tracking-wider">
-                Control Vial & Obra
-              </p>
-            </div>
-          </div>
+          </Link>
         </div>
 
-        {/* User Profile Card */}
-        <div className="p-3 mx-3 my-3 bg-slate-800/90 rounded-xl border border-slate-700/80 text-xs space-y-2">
+        {/* Navigation Menu */}
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
+          {allowedNavItems.map((item) => {
+            const isActive =
+              pathname === item.href ||
+              (item.href !== '/' && pathname?.startsWith(item.href));
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  isActive
+                    ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20 font-semibold'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                <span>{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* User Profile Card (Sesión Activa - Movida a la parte inferior del menú) */}
+        <div className="p-3 mx-3 mb-3 bg-slate-800/90 rounded-xl border border-slate-700/80 text-xs space-y-2">
           {currentUser ? (
             <div>
               <div className="flex items-center justify-between">
@@ -149,7 +182,6 @@ export function Navigation({
               <p className="font-bold text-slate-200 mt-1 line-clamp-1">{currentUser.name}</p>
               <p className="text-[10px] text-slate-400">{currentUser.title || currentUser.email}</p>
 
-
               <div className="mt-2 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-slate-400">
                 <span>
                   {currentUser.role === 'ADMIN'
@@ -159,7 +191,7 @@ export function Navigation({
                 <form action={logoutAction}>
                   <button
                     type="submit"
-                    className="text-rose-400 hover:text-rose-300 flex items-center gap-1 font-semibold"
+                    className="text-rose-400 hover:text-rose-300 flex items-center gap-1 font-semibold cursor-pointer"
                     title="Cerrar Sesión"
                   >
                     <LogOut className="w-3.5 h-3.5" />
@@ -182,52 +214,6 @@ export function Navigation({
           )}
         </div>
 
-        {/* Navigation Menu */}
-        <nav className="flex-1 px-3 space-y-1.5 overflow-y-auto">
-          {allowedNavItems.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== '/' && pathname?.startsWith(item.href));
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20 font-semibold'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                <span>{item.name}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Action Shortcuts */}
-        <div className="p-4 border-t border-slate-800 space-y-2">
-          {!isBodegueroOnly && (
-            <Link
-              href="/reportes/nuevo"
-              className="flex items-center justify-center gap-2 w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>+ Nuevo Reporte Diario</span>
-            </Link>
-          )}
-
-          <Link
-            href="/bodega"
-            className="flex items-center justify-center gap-2 w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-all border border-slate-700"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-orange-400" />
-            <span>Gestionar Bodega de Obra</span>
-          </Link>
-        </div>
-
         {/* Footer */}
         <div className="p-3 border-t border-slate-800 text-[10px] text-slate-500 flex items-center justify-between">
           <span>Control RBAC</span>
@@ -236,59 +222,65 @@ export function Navigation({
       </aside>
 
       {/* Mobile Header */}
-      <header className="no-print md:hidden bg-slate-900 text-white border-b border-slate-800 p-4 sticky top-0 z-40 flex items-center justify-between">
+      <header className="no-print md:hidden bg-slate-900 text-white border-b border-slate-800 p-3.5 sticky top-0 z-40 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2.5">
+          <img
+            src="/logo.png"
+            alt="LICOSA"
+            className="h-8 w-auto object-contain"
+          />
+          <div className="border-l border-slate-700 pl-2">
+            <span className="text-[10px] text-orange-400 font-bold uppercase tracking-wider block">
+              Control Vial
+            </span>
+          </div>
+        </Link>
+
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center">
-            <HardHat className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="font-bold text-base text-white">LICOSA</h1>
-            <p className="text-[10px] text-orange-400 uppercase font-semibold">
-              {currentUser ? `${currentUser.name} (${currentUser.role})` : 'Control de Obra'}
-            </p>
-          </div>
+          {currentUser && (
+            <button
+              onClick={toggleChat}
+              className="p-2 text-cyan-300 bg-blue-900/60 border border-blue-700/50 hover:bg-blue-800 rounded-lg cursor-pointer"
+              aria-label="Abrir Asistente IA Copilot"
+              title="Copilot IA"
+            >
+              <Bot className="w-5 h-5" />
+            </button>
+          )}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
+            aria-label="Abrir Menú"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
         </div>
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg"
-          aria-label="Abrir Menú"
-        >
-          {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
       </header>
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="no-print md:hidden fixed inset-0 top-[65px] z-50 bg-slate-900/95 p-4 flex flex-col space-y-2">
-          {allowedNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${
-                  isActive ? 'bg-orange-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                <span>{item.name}</span>
-              </Link>
-            );
-          })}
-          <div className="pt-4 border-t border-slate-800 space-y-2">
-            {!isBodegueroOnly && (
-              <Link
-                href="/reportes/nuevo"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-600 text-white rounded-lg text-sm font-bold"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>+ Nuevo Reporte Diario</span>
-              </Link>
-            )}
+        <div className="no-print md:hidden fixed inset-0 top-[65px] z-50 bg-slate-900/95 p-4 flex flex-col justify-between">
+          <div className="space-y-2">
+            {allowedNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${
+                    isActive ? 'bg-orange-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </div>
 
+          <div className="pt-4 border-t border-slate-800 space-y-2">
             <Link
               href="/login"
               onClick={() => setMobileMenuOpen(false)}
@@ -315,6 +307,24 @@ export function Navigation({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Botón de Asistente Copilot IA en la barra superior a la derecha */}
+            {currentUser && (
+              <button
+                onClick={toggleChat}
+                className="relative inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white hover:from-blue-600 hover:to-indigo-700 shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer border border-blue-400/30"
+                title="Abrir Asistente de IA (Copilot)"
+              >
+                <div className="relative flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-cyan-200" />
+                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+                  </span>
+                </div>
+                <span className="text-xs font-bold">Copilot IA</span>
+              </button>
+            )}
+
             {currentUser ? (
               <div className="flex items-center gap-3">
                 <span className="text-xs text-slate-600">

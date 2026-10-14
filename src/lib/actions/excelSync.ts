@@ -360,6 +360,7 @@ export async function analyzeExcelBuffer(
 
     const sampleText = JSON.stringify(data.slice(0, 15)).toUpperCase();
     const isPhoto = lower.includes('fotograf') || lower.includes('foto');
+    const isInstruction = lower.includes('instruccion') || lower.includes('ayuda') || lower.includes('guia');
     const isBitacora =
       lower.includes('registro diario') ||
       lower.includes('bitacora') ||
@@ -376,7 +377,14 @@ export async function analyzeExcelBuffer(
       (sampleText.includes('REPORTE N') && sampleText.includes('MONTO DE TRABAJOS EJECUTADOS')) ||
       (sampleText.includes('REPORTE DE CLIMA') && sampleText.includes('REPORTE DE EQUIPO'));
 
-    if (isBitacora) {
+    if (isInstruction) {
+      detectedSheets.push({
+        name,
+        type: 'OTHER',
+        rowCount: count,
+        description: `Guía e instrucciones de llenado (${count} filas)`,
+      });
+    } else if (isBitacora) {
       registroDiarioSheetName = name;
       detectedSheets.push({
         name,

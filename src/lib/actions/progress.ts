@@ -50,6 +50,13 @@ export interface ProjectAccumulatedProgress {
     durationDays: number;
     startDate: string;
     status: string;
+    expenses?: Array<{
+      id: string;
+      date: string;
+      total: number;
+      description: string;
+      supplier: string;
+    }>;
   };
   summary: {
     contractAmount: number;
@@ -203,6 +210,19 @@ export async function getProjectAccumulatedProgress(
     ? latestReport.nonPrincipalExecutedAccum
     : rubros.filter((r) => !r.isPrincipal).reduce((sum, r) => sum + r.accumAmount, 0);
 
+  let expenses: any[] = [];
+  try {
+    const expenseClient = (prisma as any).projectExpense;
+    if (expenseClient) {
+      expenses = await expenseClient.findMany({
+        where: { projectId },
+        orderBy: { date: 'asc' },
+      });
+    }
+  } catch (e) {
+    expenses = [];
+  }
+
   return {
     project: {
       id: project.id,
@@ -219,6 +239,13 @@ export async function getProjectAccumulatedProgress(
       durationDays: project.durationDays,
       startDate: project.startDate.toISOString().split('T')[0],
       status: project.status,
+      expenses: expenses.map((e) => ({
+        id: e.id,
+        date: e.date instanceof Date ? e.date.toISOString().split('T')[0] : String(e.date),
+        total: Number(e.total) || 0,
+        description: e.description,
+        supplier: e.supplier,
+      })),
     },
     summary: {
       contractAmount: project.contractAmount,

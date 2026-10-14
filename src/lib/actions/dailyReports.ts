@@ -62,6 +62,24 @@ export async function getDailyReportById(id: string) {
     },
   });
 
+function normalizeMachKey(desc?: string | null, machCode?: string | null): string {
+  const str = (machCode || desc || '').toUpperCase().trim();
+  const clean = str.replace(/[^A-Z0-9]/g, '');
+  if (clean.includes('EX') && clean.match(/EX\d+/)) {
+    return clean.match(/EX\d+/)![0];
+  }
+  if (clean.includes('TR') && clean.match(/TR\d+/)) {
+    return clean.match(/TR\d+/)![0];
+  }
+  if (clean.includes('RL') && clean.match(/RL\d+/)) {
+    return clean.match(/RL\d+/)![0];
+  }
+  if (clean.includes('VQ') && clean.match(/VQ\d+/)) {
+    return clean.match(/VQ\d+/)![0];
+  }
+  return clean || str;
+}
+
   if (!report) return null;
 
   // Requisito: Horas acumuladas de maquinaria hasta este reporte.
@@ -70,38 +88,51 @@ export async function getDailyReportById(id: string) {
     where: {
       dailyReport: {
         projectId: report.projectId,
-        reportNumber: { lte: report.reportNumber },
+        OR: [
+          { reportNumber: { lte: report.reportNumber } },
+          { date: { lte: report.date } },
+        ],
       },
     },
     select: {
       machineryId: true,
       description: true,
       dayHours: true,
+      machinery: {
+        select: {
+          code: true,
+          hourlyRate: true,
+        },
+      },
     },
   });
 
-  const accumByMachId = new Map<string, number>();
-  const accumByDesc = new Map<string, number>();
+  const accumByKey = new Map<string, number>();
 
   for (const log of priorLogs) {
-    if (log.machineryId) {
-      accumByMachId.set(log.machineryId, (accumByMachId.get(log.machineryId) || 0) + (log.dayHours || 0));
+    const key = log.machineryId || normalizeMachKey(log.description, log.machinery?.code);
+    accumByKey.set(key, (accumByKey.get(key) || 0) + (log.dayHours || 0));
+
+    const norm = normalizeMachKey(log.description, log.machinery?.code);
+    if (norm && norm !== key) {
+      accumByKey.set(norm, (accumByKey.get(norm) || 0) + (log.dayHours || 0));
     }
-    const cleanDesc = log.description.trim().toUpperCase();
-    accumByDesc.set(cleanDesc, (accumByDesc.get(cleanDesc) || 0) + (log.dayHours || 0));
   }
 
   const machineryLogsWithAccum = report.machineryLogs.map((m) => {
-    let accum = 0;
-    if (m.machineryId && accumByMachId.has(m.machineryId)) {
-      accum = accumByMachId.get(m.machineryId)!;
-    } else {
-      const cleanDesc = m.description.trim().toUpperCase();
-      accum = accumByDesc.get(cleanDesc) || m.dayHours;
+    const key = m.machineryId || normalizeMachKey(m.description, m.machinery?.code);
+    const norm = normalizeMachKey(m.description, m.machinery?.code);
+    let accum = accumByKey.get(key);
+    if (accum === undefined) {
+      accum = accumByKey.get(norm);
+    }
+    if (accum === undefined || accum === 0) {
+      accum = m.dayHours;
     }
     return {
       ...m,
       accumHours: accum,
+      hourlyRate: m.hourlyRate ?? m.machinery?.hourlyRate ?? 0,
     };
   });
 

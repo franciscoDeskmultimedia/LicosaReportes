@@ -26,6 +26,10 @@ interface MachineryLog {
   quantity: number;
   dayHours: number;
   accumHours?: number;
+  hourlyRate?: number;
+  machinery?: {
+    hourlyRate?: number;
+  } | null;
   notes: string | null;
 }
 
@@ -125,6 +129,14 @@ export function OfficialReportDocument({
   });
 
   const principalRubros = report.rubroExecutions.filter((r) => r.projectRubro.isPrincipal);
+  const sumRubrosDay = principalRubros.reduce((acc, r) => acc + (r.dayAmount || 0), 0);
+  const calculatedDayTotal = sumRubrosDay > 0 ? sumRubrosDay : (report.principalExecutedDay || report.totalExecutedDay || 0);
+  const calculatedAccumTotal = report.principalExecutedAccum || report.totalExecutedAccum || 0;
+
+  const totalMachineryCostDay = report.machineryLogs.reduce((acc, m) => {
+    const rate = m.hourlyRate ?? m.machinery?.hourlyRate ?? 0;
+    return acc + ((m.dayHours || 0) * rate);
+  }, 0);
 
   return (
     <div className="space-y-6">
@@ -183,8 +195,13 @@ export function OfficialReportDocument({
         {/* ========================================================================= */}
         <div className="space-y-3 print-avoid-break">
           {/* Official Navy Header */}
-          <div className="bg-[#1e3a8a] text-white text-center py-2 px-4 font-black text-sm tracking-wide uppercase border border-slate-800 shadow-xs">
-            REPORTE DIARIO DE OBRA
+          <div className="bg-[#1e3a8a] text-white flex items-center justify-between py-1.5 px-4 border border-slate-800 shadow-xs">
+            <div className="flex items-center gap-2">
+              <img src="/logo.png" alt="LICOSA" className="h-8 w-auto object-contain" />
+            </div>
+            <div className="font-black text-sm tracking-wide uppercase text-center flex-1 sm:pr-16">
+              REPORTE DIARIO DE OBRA
+            </div>
           </div>
 
           {/* Project Title Banner */}
@@ -246,109 +263,85 @@ export function OfficialReportDocument({
             <span className="font-mono text-sm">${report.totalExecutedDay.toLocaleString('es-EC', { minimumFractionDigits: 2 })}</span>
           </div>
 
-          {/* Section 1: Clima & EHS */}
-          <div className="border border-slate-400">
-            <div className="bg-[#1e3a8a] text-white font-bold text-[10px] px-2 py-1 uppercase">
-              1. REPORTE DE CLIMA Y EHS (SEGURIDAD, SALUD Y AMBIENTE)
-            </div>
-            <div className="grid grid-cols-2 text-[10px] divide-x divide-slate-300">
-              <div className="divide-y divide-slate-200">
-                <div className="flex justify-between p-1 px-2">
-                  <span>Horas de lluvia (día)</span>
-                  <strong className="font-mono">{report.rainHoursDay}</strong>
-                </div>
-                <div className="flex justify-between p-1 px-2">
-                  <span>Horas de lluvia (noche)</span>
-                  <strong className="font-mono">{report.rainHoursNight}</strong>
-                </div>
-                <div className="flex justify-between p-1 px-2">
-                  <span>Horas perdidas por lluvia</span>
-                  <strong className="font-mono">{report.lostRainHoursDay}</strong>
-                </div>
-                <div className="flex justify-between p-1 px-2">
-                  <span>Horas perdidas acum. por lluvia</span>
-                  <strong className="font-mono">{report.lostRainHoursAccum}</strong>
-                </div>
-              </div>
-
-              <div className="divide-y divide-slate-200">
-                <div className="flex justify-between p-1 px-2">
-                  <span>Tiempo charla diaria (min)</span>
-                  <strong className="font-mono">{report.safetyTalkMinutesDay}</strong>
-                </div>
-                <div className="flex justify-between p-1 px-2">
-                  <span>Tiempo charla acum. (min)</span>
-                  <strong className="font-mono">{report.safetyTalkMinutesAccum}</strong>
-                </div>
-                <div className="flex justify-between p-1 px-2">
-                  <span>Incidentes (día / acum.)</span>
-                  <strong className="font-mono">{report.incidentsDay} / {report.incidentsAccum}</strong>
-                </div>
-                <div className="flex justify-between p-1 px-2">
-                  <span>Accidentes (día / acum.)</span>
-                  <strong className="font-mono">{report.accidentsDay} / {report.accidentsAccum}</strong>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2 & 3 Side by Side: Equipos & Personal */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* 2. Equipos */}
+          {/* Secciones de Recursos: Equipos & Personal */}
+          <div className="space-y-2">
+            {/* 1. Equipos */}
             <div className="border border-slate-400">
-              <div className="bg-[#1e3a8a] text-white font-bold text-[10px] px-2 py-1 uppercase">
-                2. REPORTE DE EQUIPO
+              <div className="bg-[#1e3a8a] text-white font-bold text-[10px] px-2 py-1 uppercase flex items-center justify-between">
+                <span>1. REPORTE DE EQUIPO Y MAQUINARIA</span>
+                <span className="text-[9px] font-mono font-normal">Tarifas y horas efectivas</span>
               </div>
-              <table className="w-full text-[9.5px] border-collapse">
+              <table className="w-full text-[9px] border-collapse">
                 <thead>
                   <tr className="bg-slate-100 font-bold border-b border-slate-300 text-slate-700">
                     <th className="py-1 px-1.5 text-left">Descripción del equipo</th>
-                    <th className="py-1 px-1 text-center">Unidad</th>
-                    <th className="py-1 px-1 text-center">Cantidad</th>
-                    <th className="py-1 px-1 text-right">Horas día</th>
-                    <th className="py-1 px-1 text-right bg-slate-200/50">Horas acum.</th>
+                    <th className="py-1 px-1 text-center w-12">Unidad</th>
+                    <th className="py-1 px-1 text-center w-10">Cant.</th>
+                    <th className="py-1 px-1.5 text-right w-16">Horas día</th>
+                    <th className="py-1 px-1.5 text-right w-18 bg-slate-200/50">Horas acum.</th>
+                    <th className="py-1 px-1.5 text-right w-16 text-emerald-800">$/hora</th>
+                    <th className="py-1 px-1.5 text-right w-20 bg-emerald-50 text-emerald-900 font-extrabold">Costo día</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {report.machineryLogs.map((m) => {
                     const accum = m.accumHours !== undefined ? m.accumHours : m.dayHours;
+                    const rate = m.hourlyRate ?? m.machinery?.hourlyRate ?? 0;
+                    const dayCost = (m.dayHours || 0) * rate;
+
                     return (
                       <tr key={m.id}>
                         <td className="py-0.5 px-1.5 font-medium">{m.description}</td>
                         <td className="py-0.5 px-1 text-center font-mono">{m.unit}</td>
                         <td className="py-0.5 px-1 text-center font-mono">{m.quantity}</td>
-                        <td className="py-0.5 px-1 text-right font-mono font-bold text-orange-700">
+                        <td className="py-0.5 px-1.5 text-right font-mono font-bold text-orange-700">
                           {m.dayHours > 0 ? m.dayHours.toFixed(1) : '-'}
                         </td>
-                        <td className="py-0.5 px-1 text-right font-mono font-bold text-slate-900 bg-slate-50/70">
+                        <td className="py-0.5 px-1.5 text-right font-mono font-bold text-slate-900 bg-slate-50/70">
                           {accum > 0 ? accum.toFixed(1) : '-'}
+                        </td>
+                        <td className="py-0.5 px-1.5 text-right font-mono text-emerald-700 font-semibold">
+                          ${rate.toFixed(2)}
+                        </td>
+                        <td className="py-0.5 px-1.5 text-right font-mono font-bold text-slate-900 bg-emerald-50/40">
+                          ${dayCost.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
+                <tfoot>
+                  <tr className="bg-slate-100 font-bold border-t border-slate-300 text-slate-900">
+                    <td colSpan={5} className="py-1 px-2 text-right text-[8.5px] uppercase">
+                      Total Costo Maquinaria Jornada ($):
+                    </td>
+                    <td colSpan={2} className="py-1 px-2 text-right font-mono text-emerald-900 font-black">
+                      ${totalMachineryCostDay.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
-            {/* 3. Personal */}
+            {/* 2. Personal */}
             <div className="border border-slate-400">
               <div className="bg-[#1e3a8a] text-white font-bold text-[10px] px-2 py-1 uppercase">
-                3. REPORTE DE PERSONAL
+                2. REPORTE DE PERSONAL EN OBRA
               </div>
-              <table className="w-full text-[9.5px] border-collapse">
+              <table className="w-full text-[9px] border-collapse">
                 <thead>
                   <tr className="bg-slate-100 font-bold border-b border-slate-300 text-slate-700">
-                    <th className="py-1 px-1.5 text-left">Categoría / Cargo</th>
-                    <th className="py-1 px-1 text-center">N°</th>
-                    <th className="py-1 px-1 text-right">H-Hombre día</th>
+                    <th className="py-1 px-2 text-left">Categoría / Cargo</th>
+                    <th className="py-1 px-2 text-center w-20">N° Trabajadores</th>
+                    <th className="py-1 px-2 text-right w-28">H-Hombre día</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {report.personnelLogs.map((p) => (
                     <tr key={p.id}>
-                      <td className="py-0.5 px-1.5 font-medium">{p.categoryRole}</td>
-                      <td className="py-0.5 px-1 text-center font-mono">{p.quantity}</td>
-                      <td className="py-0.5 px-1 text-right font-mono">{p.manHoursDay}</td>
+                      <td className="py-0.5 px-2 font-medium">{p.categoryRole}</td>
+                      <td className="py-0.5 px-2 text-center font-mono">{p.quantity}</td>
+                      <td className="py-0.5 px-2 text-right font-mono">{p.manHoursDay}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -356,10 +349,10 @@ export function OfficialReportDocument({
             </div>
           </div>
 
-          {/* Section 4: Rubros Principales del Día */}
+          {/* Section 3: Rubros Principales del Día */}
           <div className="border border-slate-400">
             <div className="bg-[#1e3a8a] text-white font-bold text-[10px] px-2 py-1 uppercase">
-              4. RUBROS PRINCIPALES DEL DÍA
+              3. RUBROS PRINCIPALES DEL DÍA
             </div>
             <table className="w-full text-[9.5px] border-collapse">
               <thead>
@@ -391,7 +384,7 @@ export function OfficialReportDocument({
                     <td className="py-1 px-2 text-right">
                       {r.accumQuantity.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="py-1 px-2 text-right font-bold">
+                    <td className="py-1 px-2 text-right font-bold text-slate-900">
                       $ {r.dayAmount.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="py-1 px-2 text-right">
@@ -401,15 +394,25 @@ export function OfficialReportDocument({
                 ))}
               </tbody>
               <tfoot>
+                {/* Fila 1: Subtotal exacto del día */}
                 <tr className="bg-slate-100 font-bold border-t-2 border-slate-400 text-slate-900">
-                  <td colSpan={5} className="py-1.5 px-3 text-right uppercase text-[10px]">
-                    SUBTOTAL RUBROS PRINCIPALES ($)
+                  <td colSpan={5} className="py-1.5 px-3 text-right uppercase text-[9.5px]">
+                    SUBTOTAL RUBROS PRINCIPALES (DÍA):
                   </td>
-                  <td className="py-1.5 px-2 text-right font-mono text-sm">
-                    $ {report.principalExecutedDay.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                  <td className="py-1.5 px-2 text-right font-mono text-sm text-blue-900 font-black">
+                    $ {calculatedDayTotal.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="py-1.5 px-2 text-right font-mono text-sm">
-                    $ {report.principalExecutedAccum.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                  <td className="py-1.5 px-2 text-center text-slate-400 font-mono text-xs">
+                    -
+                  </td>
+                </tr>
+                {/* Fila 2: Monto acumulado del proyecto en su propia fila independiente */}
+                <tr className="bg-blue-50 font-bold border-t border-blue-200 text-blue-950">
+                  <td colSpan={5} className="py-1.5 px-3 text-right uppercase text-[9.5px]">
+                    MONTO ACUMULADO DEL PROYECTO (HASTA ESTA FECHA):
+                  </td>
+                  <td colSpan={2} className="py-1.5 px-3 text-right font-mono text-sm text-blue-950 font-black">
+                    $ {calculatedAccumTotal.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                   </td>
                 </tr>
               </tfoot>

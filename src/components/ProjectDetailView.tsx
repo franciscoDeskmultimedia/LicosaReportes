@@ -38,7 +38,10 @@ import {
   ExternalLink,
   Pencil,
   X,
+  Receipt,
 } from 'lucide-react';
+import { ProjectExpensesTab } from '@/components/ProjectExpensesTab';
+import { ProjectDynamicCurves } from '@/components/ProjectDynamicCurves';
 import { AdjustRubroModal } from '@/components/AdjustRubroModal';
 import { AddRubroModal } from '@/components/AddRubroModal';
 import { BulkRubroImportModal } from '@/components/BulkRubroImportModal';
@@ -175,6 +178,7 @@ interface ProjectData {
   dailyReports?: DailyReportData[];
   workerAssignments?: WorkerAssignment[];
   contractors?: ProjectContractor[];
+  expenses?: any[];
 }
 
 export function ProjectDetailView({
@@ -197,11 +201,11 @@ export function ProjectDetailView({
   const router = useRouter();
 
   // Validate initialTab
-  const validTabs = ['resumen', 'reportes', 'rubros', 'personal', 'contratistas', 'modificaciones'];
+  const validTabs = ['resumen', 'reportes', 'rubros', 'costos', 'modificaciones'];
   const startingTab = initialTab && validTabs.includes(initialTab) ? (initialTab as any) : 'resumen';
 
   const [activeTab, setActiveTab] = useState<
-    'resumen' | 'reportes' | 'rubros' | 'personal' | 'contratistas' | 'modificaciones'
+    'resumen' | 'reportes' | 'rubros' | 'costos' | 'modificaciones'
   >(startingTab);
 
   const [search, setSearch] = useState('');
@@ -256,6 +260,13 @@ export function ProjectDetailView({
   const timePercent = project.durationDays > 0 ? (elapsedDays / project.durationDays) * 100 : 0;
   const spi = timePercent > 0 ? progressPercent / timePercent : 1;
   const isHealthy = spi >= 0.9;
+
+  // Total de costos registrados de la obra
+  const totalExpensesAmount = (project.expenses || []).reduce(
+    (acc: number, e: any) => acc + (Number(e.total) || 0),
+    0
+  );
+  const expensesCount = (project.expenses || []).length;
 
   // Rubros progress list with safe fallback
   const rubrosProgressList = useMemo(() => {
@@ -529,27 +540,15 @@ export function ProjectDetailView({
         </button>
 
         <button
-          onClick={() => setActiveTab('personal')}
+          onClick={() => setActiveTab('costos')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-            activeTab === 'personal'
+            activeTab === 'costos'
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Users className="w-4 h-4" />
-          <span>Personal & Cuadrillas ({activeWorkers.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('contratistas')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-            activeTab === 'contratistas'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <Briefcase className="w-4 h-4" />
-          <span>Contratistas ({activeContractors.length})</span>
+          <Receipt className="w-4 h-4" />
+          <span>Costos de Obra ({(project.expenses || []).length})</span>
         </button>
 
         <button
@@ -613,10 +612,20 @@ export function ProjectDetailView({
                   </span>
                 </div>
 
-                <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200/80">
-                  <span className="text-[10px] text-blue-800 font-semibold uppercase block">Plazo Transcurrido</span>
-                  <span className="font-semibold text-blue-900 text-xs sm:text-sm">
-                    {elapsedDays} / {project.durationDays} d ({timePercent.toFixed(0)}%)
+                <div
+                  onClick={() => setActiveTab('costos')}
+                  className="p-3 bg-indigo-50/70 hover:bg-indigo-100/70 transition-all rounded-xl border border-indigo-200/80 cursor-pointer group"
+                  title="Ver desglose de costos de la obra"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-indigo-800 font-semibold uppercase block">Costos de Obra</span>
+                    <Receipt className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <span className="font-mono font-bold text-indigo-900 text-xs sm:text-sm block">
+                    ${totalExpensesAmount.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-indigo-600 block truncate font-medium">
+                    {expensesCount > 0 ? `${expensesCount} comprobantes cargados` : 'Sin costos cargados'}
                   </span>
                 </div>
               </div>
@@ -812,6 +821,20 @@ export function ProjectDetailView({
               </div>
             </div>
           </div>
+
+          {/* CURVAS DINÁMICAS & DESEMPEÑO FINANCIERO (CON FILTRO DE 7 REPORTES Y TOGGLE DE COSTOS) */}
+          <ProjectDynamicCurves
+            reports={allDailyReports.map((r) => ({
+              reportNumber: r.reportNumber,
+              date: r.date,
+              totalExecutedDay: r.totalExecutedDay,
+              totalExecutedAccum: r.totalExecutedAccum,
+              elapsedDays: r.elapsedDays,
+            }))}
+            expenses={project.expenses || []}
+            contractAmount={project.contractAmount || totalContractBudget || 0}
+            initialWindow="7"
+          />
 
           {/* RESUMEN DE AVANCE POR RUBROS (CON BUSCADOR Y FILTROS) */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -1739,143 +1762,17 @@ export function ProjectDetailView({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4: PERSONAL & CUADRILLAS                                              */}
+      {/* TAB 4: COSTOS DE OBRA                                                     */}
       {/* ========================================================================= */}
-      {activeTab === 'personal' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div>
-              <h2 className="text-base font-black text-slate-900">
-                Personal Asignado a la Obra ({activeWorkers.length})
-              </h2>
-              <p className="text-xs text-slate-500">
-                Nómina técnica, fiscalización y cuadrillas asignadas activamente a este proyecto
-              </p>
-            </div>
-            <button
-              onClick={() => setAssignWorkerOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>+ Asignar Personal</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeWorkers.map((wa) => (
-              <div
-                key={wa.id}
-                className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between space-y-3"
-              >
-                <div>
-                  <div className="flex justify-between items-start">
-                    <span className="font-mono text-[10px] text-slate-400">CI: {wa.worker.identification}</span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                      {wa.assignedRole || wa.worker.roleCategory}
-                    </span>
-                  </div>
-                  <h4 className="font-bold text-slate-900 text-sm mt-1">{wa.worker.name}</h4>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Desde: {new Date(wa.startDate).toLocaleDateString('es-EC')}
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400">
-                    {wa.worker.phone || wa.worker.email || 'Sin contacto'}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setEditingWorker(wa.worker)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                      title="Editar datos del trabajador"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      <span>Editar</span>
-                    </button>
-                    <button
-                      onClick={() => handleRemoveWorker(wa.id, wa.worker.name)}
-                      disabled={deletingId === wa.id}
-                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded text-xs font-semibold cursor-pointer transition-colors"
-                    >
-                      Desvincular
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 5: CONTRATISTAS & SUBCONTRATOS                                        */}
-      {/* ========================================================================= */}
-      {activeTab === 'contratistas' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div>
-              <h2 className="text-base font-black text-slate-900">
-                Contratistas & Subcontratos de la Obra ({activeContractors.length})
-              </h2>
-              <p className="text-xs text-slate-500">
-                Empresas prestadoras de servicios, provisión de asfalto y transporte
-              </p>
-            </div>
-            <button
-              onClick={() => setAssignContractorOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold cursor-pointer"
-            >
-              <Briefcase className="w-3.5 h-3.5" />
-              <span>+ Contratista</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeContractors.map((ac) => (
-              <div
-                key={ac.id}
-                className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between space-y-3"
-              >
-                <div>
-                  <div className="flex justify-between items-start">
-                    <span className="font-mono text-[10px] text-slate-400">RUC: {ac.contractor.ruc}</span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">
-                      {ac.contractor.specialty}
-                    </span>
-                  </div>
-                  <h4 className="font-bold text-slate-900 text-sm mt-1">{ac.contractor.name}</h4>
-                  <p className="text-xs text-slate-500 mt-1">Rol: {ac.roleInProject}</p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-500">
-                    Contacto: {ac.contractor.contactPerson || 'S/N'}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setEditingContractor(ac.contractor)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                      title="Editar datos del contratista"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      <span>Editar</span>
-                    </button>
-                    <button
-                      onClick={() => handleRemoveContractor(ac.id, ac.contractor.name)}
-                      disabled={deletingId === ac.id}
-                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded text-xs font-semibold cursor-pointer transition-colors"
-                    >
-                      Desvincular
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      {activeTab === 'costos' && (
+        <ProjectExpensesTab
+          projectId={project.id}
+          projectCode={project.code}
+          projectName={project.name}
+          contractAmount={project.contractAmount || totalContractBudget || 0}
+          totalExecutedAccum={totalExecutedAccum}
+          expenses={project.expenses || []}
+        />
       )}
 
       {/* ========================================================================= */}

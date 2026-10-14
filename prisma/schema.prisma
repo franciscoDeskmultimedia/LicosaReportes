@@ -41,6 +41,7 @@ model Project {
   requests            WorkRequest[]
   workerAssignments   WorkerAssignment[]
   contractors         ProjectContractorAssignment[]
+  expenses            ProjectExpense[]
   
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -149,6 +150,7 @@ model Machinery {
   unit                String                 @default("hora") // hora, Unidad
   status              String                 @default("OPERATIVO") // OPERATIVO, EN_MANTENIMIENTO, AVERIADO
   totalHoursWorked    Float                  @default(0)
+  hourlyRate          Float                  @default(0) // Valor o costo por hora ($/h)
   
   dailyLogs           DailyReportMachinery[]
   requests            WorkRequest[]
@@ -240,6 +242,7 @@ model DailyReportMachinery {
   unit                String       @default("hora") // hora, Unidad
   quantity            Float        @default(1)
   dayHours            Float        @default(0)
+  hourlyRate          Float?       // Valor hora snapshot ($/h)
   notes               String?
 }
 
@@ -431,6 +434,37 @@ model ProjectContractorAssignment {
 
   @@unique([contractorId, projectId])
   @@index([projectId])
+}
+
+model ProjectExpense {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  date            DateTime  // Fecha del gasto / factura
+  registerType    String?   // Tipo Registro (e.g. Proveedor)
+  documentType    String?   // Tipo Documento (e.g. Factura, Nota de Venta, Liquidación de Compra, Documento no autorizado)
+  documentNumber  String?   // # Documento (e.g. 001-100-000000131)
+  supplier        String    // Persona / Proveedor (e.g. AZAR ANDRADE JOSE FAGIN)
+  
+  subtotalIva     Float     @default(0) // Subtotal IVA mayor a 0%
+  subtotalZero    Float     @default(0) // Subtotal IVA 0%
+  iva             Float     @default(0) // IVA
+  ice             Float     @default(0) // ICE
+  total           Float     @default(0) // Total ($)
+  retentions      Float     @default(0) // Retenciones
+  balance         Float     @default(0) // Saldo
+  
+  description     String    // Descripción detallada
+  category        String?   // Categoría (e.g. Materiales pétreos, Servicios profesionales, Alimentación, Combustible/Peajes, Mantenimiento, Repuestos, etc.)
+  
+  importedFrom    String?   // e.g. "Excel: GASTOS OBRA VALLE DE LA VIRGEN.xls" o "Manual"
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([date])
+  @@index([supplier])
 }
 
 

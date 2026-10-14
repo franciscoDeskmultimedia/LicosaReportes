@@ -25,6 +25,7 @@ import {
   AlertCircle,
   FileCheck,
   ShieldCheck,
+  Download,
 } from 'lucide-react';
 import {
   analyzeExcelFormData,
@@ -424,6 +425,39 @@ export function ExcelReportSyncModal({
                   className="hidden"
                 />
               </label>
+            </div>
+
+            {/* Descargar Plantilla Oficial RDO Estilizada */}
+            <div className="bg-gradient-to-r from-slate-50 via-blue-50/40 to-slate-50 border border-blue-200/90 rounded-2xl p-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <FileCheck className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                  <p className="font-bold text-slate-900 text-sm">
+                    Plantilla Oficial de Reporte Diario de Obra (RDO) Estilizada
+                  </p>
+                </div>
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  Formato idéntico al oficial de LICOSA con código de colores (amarillo editable, verde fórmulas automáticas), control de maquinaria, personal y rubros del día.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px]">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    Amarillo: Datos a llenar
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Verde: Fórmulas de total y %
+                  </span>
+                </div>
+              </div>
+              <a
+                href="/api/plantilla-reporte-diario"
+                download="Plantilla_Reporte_Diario_Licosa.xlsx"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-sm shadow-blue-700/20 flex-shrink-0 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Descargar Plantilla RDO</span>
+              </a>
             </div>
           </div>
         )}

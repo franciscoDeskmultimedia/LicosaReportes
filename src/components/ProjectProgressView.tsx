@@ -20,6 +20,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { ProjectAccumulatedProgress } from '@/lib/actions/progress';
+import { ProjectDynamicCurves } from '@/components/ProjectDynamicCurves';
 
 interface ProjectOption {
   id: string;
@@ -67,31 +68,7 @@ export function ProjectProgressView({
     return true;
   });
 
-  // Calculate S-Curve SVG coordinates
-  const svgWidth = 800;
-  const svgHeight = 220;
-  const padding = { top: 20, right: 30, bottom: 40, left: 60 };
-  const graphWidth = svgWidth - padding.left - padding.right;
-  const graphHeight = svgHeight - padding.top - padding.bottom;
 
-  let polylinePoints = '';
-  let areaPoints = '';
-
-  if (evolution.length > 0) {
-    const maxVal = Math.max(summary.contractAmount, ...evolution.map((e) => e.totalExecutedAccum), 1);
-    const minVal = 0;
-
-    const coords = evolution.map((pt, idx) => {
-      const x = padding.left + (idx / Math.max(evolution.length - 1, 1)) * graphWidth;
-      const y = padding.top + graphHeight - ((pt.totalExecutedAccum - minVal) / (maxVal - minVal)) * graphHeight;
-      return { x, y, pt };
-    });
-
-    polylinePoints = coords.map((c) => `${c.x},${c.y}`).join(' ');
-    if (coords.length > 0) {
-      areaPoints = `${coords[0].x},${padding.top + graphHeight} ${polylinePoints} ${coords[coords.length - 1].x},${padding.top + graphHeight}`;
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -279,123 +256,19 @@ export function ProjectProgressView({
         </div>
       </div>
 
-      {/* S-Curve / Historical Evolution Over Time Chart */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-orange-600" />
-              <span>Curva de Avance Acumulado en el Tiempo (Evolución Histórica)</span>
-            </h2>
-            <p className="text-xs text-slate-500">
-              Progresión del monto acumulado ejecutado ($) en cada jornada de trabajo registrada
-            </p>
-          </div>
-          <div className="flex items-center gap-4 text-xs font-semibold">
-            <span className="flex items-center gap-1.5 text-slate-600">
-              <span className="w-3 h-3 rounded-full bg-orange-600 inline-block" />
-              <span>Ejecutado Acumulado ($)</span>
-            </span>
-            <span className="flex items-center gap-1.5 text-slate-400">
-              <span className="w-3 h-0.5 bg-slate-300 inline-block" />
-              <span>Monto Contractual</span>
-            </span>
-          </div>
-        </div>
-
-        {evolution.length > 0 ? (
-          <div className="overflow-x-auto">
-            <div className="min-w-[650px]">
-              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto overflow-visible">
-                {/* Horizontal gridlines */}
-                {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => {
-                  const y = padding.top + graphHeight * (1 - pct);
-                  const val = summary.contractAmount * pct;
-                  return (
-                    <g key={i}>
-                      <line
-                        x1={padding.left}
-                        y1={y}
-                        x2={svgWidth - padding.right}
-                        y2={y}
-                        stroke="#f1f5f9"
-                        strokeDasharray={pct === 1 ? '4 4' : 'none'}
-                        strokeWidth={1}
-                      />
-                      <text
-                        x={padding.left - 8}
-                        y={y + 3}
-                        textAnchor="end"
-                        fontSize="9"
-                        className="fill-slate-400 font-mono"
-                      >
-                        ${(val / 1000).toFixed(0)}k
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* Shaded Area */}
-                {areaPoints && (
-                  <polygon points={areaPoints} className="fill-orange-500/10" />
-                )}
-
-                {/* Progress Curve Line */}
-                {polylinePoints && (
-                  <polyline
-                    fill="none"
-                    stroke="#ea580c"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    points={polylinePoints}
-                  />
-                )}
-
-                {/* Data Points */}
-                {evolution.map((pt, idx) => {
-                  const maxVal = Math.max(summary.contractAmount, ...evolution.map((e) => e.totalExecutedAccum), 1);
-                  const x = padding.left + (idx / Math.max(evolution.length - 1, 1)) * graphWidth;
-                  const y = padding.top + graphHeight - (pt.totalExecutedAccum / maxVal) * graphHeight;
-
-                  return (
-                    <g key={idx} className="group">
-                      <circle
-                        cx={x}
-                        cy={y}
-                        r="4"
-                        className="fill-white stroke-orange-600 stroke-2 hover:r-6 transition-all cursor-pointer"
-                      />
-                      <text
-                        x={x}
-                        y={padding.top + graphHeight + 18}
-                        textAnchor="middle"
-                        fontSize="9"
-                        className="fill-slate-500 font-medium"
-                      >
-                        {pt.formattedDate}
-                      </text>
-                      <text
-                        x={x}
-                        y={padding.top + graphHeight + 30}
-                        textAnchor="middle"
-                        fontSize="8"
-                        className="fill-slate-400 font-mono"
-                      >
-                        Rep.{pt.reportNumber}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
-            </div>
-          </div>
-        ) : (
-          <div className="py-12 text-center text-slate-400 text-xs italic">
-            No se han registrado reportes diarios aún para trazar la curva acumulada de este proyecto.
-          </div>
-        )}
-      </div>
+      {/* S-Curve & Dynamic Costs Over Time */}
+      <ProjectDynamicCurves
+        reports={evolution.map((e) => ({
+          reportNumber: e.reportNumber,
+          date: e.date,
+          totalExecutedDay: e.totalExecutedDay,
+          totalExecutedAccum: e.totalExecutedAccum,
+          elapsedDays: e.elapsedDays,
+        }))}
+        expenses={(project as any)?.expenses || []}
+        contractAmount={summary.contractAmount}
+        initialWindow="7"
+      />
 
       {/* Rubros Section Header & Filters */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">

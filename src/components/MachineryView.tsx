@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Truck, PlusCircle, Clock, AlertTriangle, CheckCircle2, Wrench, Search, X, Trash2 } from 'lucide-react';
+import { Truck, PlusCircle, Clock, AlertTriangle, CheckCircle2, Wrench, Search, X, Trash2, Pencil, DollarSign } from 'lucide-react';
 import { createMachinery, updateMachineryStatus, deleteMachinery } from '@/lib/actions/machinery';
 
 interface MachineryItem {
@@ -13,6 +13,7 @@ interface MachineryItem {
   unit: string;
   status: string;
   totalHoursWorked: number;
+  hourlyRate?: number;
   dailyLogs: Array<{
     id: string;
     dayHours: number;
@@ -36,17 +37,42 @@ export function MachineryView({
   const [deleteTarget, setDeleteTarget] = useState<MachineryItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Create state
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Excavadora');
   const [unit, setUnit] = useState('hora');
+  const [hourlyRate, setHourlyRate] = useState('0');
   const [loading, setLoading] = useState(false);
+
+  // Edit state (Admin only)
+  const [editTarget, setEditTarget] = useState<MachineryItem | null>(null);
+  const [editCode, setEditCode] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editCategory, setEditCategory] = useState('Excavadora');
+  const [editUnit, setEditUnit] = useState('hora');
+  const [editStatus, setEditStatus] = useState('OPERATIVO');
+  const [editHourlyRate, setEditHourlyRate] = useState('0');
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const filtered = machinery.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase()) ||
     m.code.toLowerCase().includes(search.toLowerCase()) ||
     m.category.toLowerCase().includes(search.toLowerCase())
   );
+
+  function openEditModal(m: MachineryItem) {
+    setEditTarget(m);
+    setEditCode(m.code);
+    setEditName(m.name);
+    setEditCategory(m.category);
+    setEditUnit(m.unit || 'hora');
+    setEditStatus(m.status || 'OPERATIVO');
+    setEditHourlyRate(String(m.hourlyRate ?? 0));
+    setEditError(null);
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -58,14 +84,39 @@ export function MachineryView({
         name: name.trim().toUpperCase(),
         category,
         unit,
+        hourlyRate: parseFloat(hourlyRate) || 0,
       });
       setModalOpen(false);
       setCode('');
       setName('');
+      setHourlyRate('0');
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editTarget) return;
+    try {
+      setEditing(true);
+      setEditError(null);
+      const { updateMachinery } = await import('@/lib/actions/machinery');
+      await updateMachinery(editTarget.id, {
+        code: editCode.trim().toUpperCase(),
+        name: editName.trim(),
+        category: editCategory,
+        unit: editUnit,
+        status: editStatus,
+        hourlyRate: parseFloat(editHourlyRate) || 0,
+      });
+      setEditTarget(null);
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : 'Error al actualizar maquinaria');
+    } finally {
+      setEditing(false);
     }
   }
 
@@ -99,7 +150,7 @@ export function MachineryView({
             Control de Maquinaria & Equipos de Obra
           </h1>
           <p className="text-xs text-slate-500">
-            Seguimiento de horas operativas en frentes viales y estado mecánico
+            Seguimiento de horas operativas, tarifas horarias y estado mecánico
           </p>
         </div>
 
@@ -146,17 +197,27 @@ export function MachineryView({
                     </select>
 
                     {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeleteError(null);
-                          setDeleteTarget(m);
-                        }}
-                        title="Eliminar maquinaria (Admin)"
-                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1 pl-1 border-l border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(m)}
+                          title="Editar maquinaria y valor hora (Admin)"
+                          className="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleteTarget(m);
+                          }}
+                          title="Eliminar maquinaria (Admin)"
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -164,14 +225,27 @@ export function MachineryView({
                 <h2 className="text-base font-bold text-slate-900">{m.name}</h2>
                 <p className="text-xs text-slate-500">{m.category}</p>
 
-                <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5 text-slate-500">
-                    <Clock className="w-4 h-4 text-orange-600" />
-                    <span>Horas Trabajadas:</span>
+                {/* Metrics: Hours + Hourly Rate */}
+                <div className="grid grid-cols-2 gap-2 mt-4">
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                    <div className="flex items-center gap-1.5 text-slate-500 mb-1">
+                      <Clock className="w-3.5 h-3.5 text-orange-600" />
+                      <span className="text-[11px]">Horas Totales:</span>
+                    </div>
+                    <span className="font-mono font-bold text-slate-900">
+                      {m.totalHoursWorked.toFixed(1)} {m.unit}s
+                    </span>
                   </div>
-                  <span className="font-mono font-bold text-sm text-slate-900">
-                    {m.totalHoursWorked.toFixed(1)} {m.unit}s
-                  </span>
+
+                  <div className="p-2.5 bg-emerald-50/60 rounded-xl border border-emerald-100 text-xs">
+                    <div className="flex items-center gap-1.5 text-emerald-700 mb-1">
+                      <DollarSign className="w-3.5 h-3.5" />
+                      <span className="text-[11px] font-semibold">Valor Hora:</span>
+                    </div>
+                    <span className="font-mono font-black text-emerald-700">
+                      ${(m.hourlyRate || 0).toLocaleString('es-EC', { minimumFractionDigits: 2 })} / {m.unit}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -260,6 +334,28 @@ export function MachineryView({
                   </select>
                 </div>
               </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Valor / Costo por Hora ($/h)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-slate-400 font-bold">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={hourlyRate}
+                    onChange={(e) => setHourlyRate(e.target.value)}
+                    className="w-full pl-7 pr-3 py-2 border rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <p className="text-[10.5px] text-slate-400 mt-1">
+                  Este valor se multiplicará automáticamente por las horas trabajadas en los reportes diarios.
+                </p>
+              </div>
+
               <div className="pt-3 border-t flex justify-end gap-2">
                 <button
                   type="button"
@@ -274,6 +370,148 @@ export function MachineryView({
                   className="px-5 py-2 bg-orange-600 text-white rounded-lg font-bold"
                 >
                   Guardar Equipo
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Edit machinery (Admin only) */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Editar Maquinaria & Valor Hora</h3>
+                  <p className="text-[10px] text-slate-500">Gestión de tarifas de equipo (Admin)</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditTarget(null)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="mt-4 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Código</label>
+                  <input
+                    type="text"
+                    required
+                    value={editCode}
+                    onChange={(e) => setEditCode(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs font-mono uppercase bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Estado</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs bg-white"
+                  >
+                    <option value="OPERATIVO">Operativo</option>
+                    <option value="EN_MANTENIMIENTO">En Mantenimiento</option>
+                    <option value="AVERIADO">Averiado / Taller</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Nombre / Descripción</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Categoría</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs bg-white"
+                  >
+                    <option value="Excavadora">Excavadora</option>
+                    <option value="Tractor">Tractor</option>
+                    <option value="Rodillo">Rodillo</option>
+                    <option value="Mula">Mula</option>
+                    <option value="Tractomula">Tractomula</option>
+                    <option value="Volqueta">Volqueta</option>
+                    <option value="Tanquero">Tanquero</option>
+                    <option value="Motoniveladora">Motoniveladora</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Unidad</label>
+                  <select
+                    value={editUnit}
+                    onChange={(e) => setEditUnit(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs bg-white"
+                  >
+                    <option value="hora">hora</option>
+                    <option value="Unidad">Unidad</option>
+                    <option value="km">km</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-3 bg-orange-50/50 rounded-xl border border-orange-200/80">
+                <label className="block font-bold text-orange-900 mb-1 flex items-center justify-between">
+                  <span>Valor / Tarifa por Hora ($/h)</span>
+                  <span className="text-[10px] text-orange-600 font-normal">Requerido para reportes</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-slate-400 font-bold">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    placeholder="0.00"
+                    value={editHourlyRate}
+                    onChange={(e) => setEditHourlyRate(e.target.value)}
+                    className="w-full pl-7 pr-3 py-2 border border-orange-300 rounded-lg text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  En los reportes diarios se multiplicará: <em>(Horas Día × Valor Hora)</em> para totalizar el costo de este equipo.
+                </p>
+              </div>
+
+              {editError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs">
+                  {editError}
+                </div>
+              )}
+
+              <div className="pt-3 border-t flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={editing}
+                  onClick={() => setEditTarget(null)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editing}
+                  className="px-5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-bold shadow-md shadow-orange-600/20 disabled:opacity-50"
+                >
+                  {editing ? 'Guardando...' : 'Guardar Cambios'}
                 </button>
               </div>
             </form>

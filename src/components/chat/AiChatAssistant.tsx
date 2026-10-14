@@ -22,6 +22,7 @@ import {
   Square,
 } from 'lucide-react';
 import { getChatAvailableProjects, ChatProjectOption } from '@/lib/ai/actions';
+import { useAiChat } from '@/components/chat/AiChatContext';
 
 interface Message {
   id: string;
@@ -213,7 +214,7 @@ function MarkdownRenderer({ content }: { content: string }) {
 }
 
 export function AiChatAssistant() {
-  const [isOpen, setIsOpen] = useState(false);
+  const { isOpen, setIsOpen } = useAiChat();
   const [isExpanded, setIsExpanded] = useState(false);
   const [projects, setProjects] = useState<ChatProjectOption[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL');
@@ -559,39 +560,24 @@ export function AiChatAssistant() {
 
   return (
     <>
-      {/* Botón Flotante (Siempre visible) */}
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 px-4 py-3 text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 group border border-blue-400/30"
-          aria-label="Abrir asistente de IA"
-        >
-          <div className="relative flex items-center justify-center">
-            <Bot className="w-5 h-5 text-blue-100 group-hover:rotate-12 transition-transform" />
-            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400"></span>
-            </span>
-          </div>
-          <span className="font-semibold text-sm tracking-wide">LICOSA Copilot</span>
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase flex items-center gap-1">
-            <Mic className="h-2.5 w-2.5" /> Voz & Chat
-          </span>
-        </button>
-      )}
+      {/* Backdrop overlay */}
+      <div
+        onClick={() => setIsOpen(false)}
+        className={`fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 transition-opacity duration-300 ${
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+      />
 
-      {/* Ventana de Chat Flotante / Drawer */}
-      {isOpen && (
-        <div
-          className={`fixed bottom-4 right-4 z-50 flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden transition-all duration-200 ${
-            isExpanded
-              ? 'w-[95vw] md:w-[720px] h-[86vh]'
-              : 'w-[92vw] sm:w-[470px] h-[610px] max-h-[86vh]'
-          }`}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white">
-            <div className="flex items-center gap-2.5">
+      {/* Drawer deslizante de derecha a izquierda */}
+      <aside
+        aria-label="Panel Asistente IA Copilot"
+        className={`fixed inset-y-0 right-0 z-50 flex flex-col bg-white shadow-2xl border-l border-slate-200 overflow-hidden transform transition-transform duration-300 ease-in-out ${
+          isExpanded ? 'w-full sm:w-[720px]' : 'w-full sm:w-[500px] md:w-[540px]'
+        } ${isOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white flex-shrink-0">
+          <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600/30 text-blue-300 border border-blue-400/20">
                 <Bot className="h-5 w-5" />
               </div>
@@ -892,8 +878,7 @@ export function AiChatAssistant() {
               </span>
             </div>
           </div>
-        </div>
-      )}
+        </aside>
     </>
   );
 }

@@ -5,10 +5,6 @@ import Link from 'next/link';
 import {
   Calendar,
   Clock,
-  CloudRain,
-  Sun,
-  CloudSun,
-  Cloud,
   Truck,
   HardHat,
   Users,
@@ -64,7 +60,6 @@ export function DailyReportHtmlDashboard({
 
   // Financial & Progress metrics
   const contractBudget = report.contractAmount || report.project?.contractAmount || 1;
-  const dayBilled = report.totalExecutedDay || 0;
   const accumBilled = report.totalExecutedAccum || 0;
   const progressPercent = report.progressPercentAccum || (accumBilled / contractBudget) * 100 || 0;
 
@@ -80,19 +75,28 @@ export function DailyReportHtmlDashboard({
   const personnelLogs = report.personnelLogs || [];
   const totalWorkers = personnelLogs.reduce((acc: number, p: any) => acc + (p.count || 0), 0);
 
-  // Machinery logs
+  // Machinery logs with rates and costs
   const machineryLogs = report.machineryLogs || [];
   const totalMachineryHoursDay = machineryLogs.reduce((acc: number, m: any) => acc + (m.dayHours || 0), 0);
-  const totalMachineryHoursAccum = machineryLogs.reduce((acc: number, m: any) => acc + (m.accumHours || m.dayHours || 0), 0);
+  const totalMachineryHoursAccum = machineryLogs.reduce((acc: number, m: any) => acc + (m.accumHours ?? m.dayHours ?? 0), 0);
+  const totalMachineryCostDay = machineryLogs.reduce((acc: number, m: any) => {
+    const rate = m.hourlyRate ?? m.machinery?.hourlyRate ?? 0;
+    return acc + ((m.dayHours || 0) * rate);
+  }, 0);
 
-  // Rubros executed
+  // Rubros executed & Day calculation
   const rubroExecutions = report.rubroExecutions || [];
   const rubrosWithDayWork = rubroExecutions.filter((r: any) => (r.dayQuantity || 0) > 0);
   const rubrosToDisplay = rubroFilter === 'dayOnly' && rubrosWithDayWork.length > 0 ? rubrosWithDayWork : rubroExecutions;
 
-  // Weather calculations
-  const rainHours = report.rainHoursDay || 0;
-  const lostHours = report.lostRainHoursDay || 0;
+  const calculatedRubrosDayTotal = rubroExecutions.reduce((acc: number, r: any) => {
+    const unitPrice = r.projectRubro?.unitPrice || 0;
+    const dayQty = r.dayQuantity || 0;
+    const dayAmt = r.dayAmount && r.dayAmount > 0 ? r.dayAmount : (dayQty * unitPrice);
+    return acc + dayAmt;
+  }, 0);
+
+  const effectiveDayBilled = calculatedRubrosDayTotal > 0 ? calculatedRubrosDayTotal : (report.principalExecutedDay || report.totalExecutedDay || 0);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -105,19 +109,25 @@ export function DailyReportHtmlDashboard({
         <div className="absolute left-1/3 bottom-0 w-64 h-64 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-3 py-1 rounded-full text-xs font-black bg-orange-600 text-white shadow-xs">
-                REPORTE N° {String(report.reportNumber).padStart(3, '0')}
-              </span>
-              <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-800 border border-slate-700 text-slate-300">
-                Obra: {report.project?.code || project?.code || 'LICOSA'}
-              </span>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                Vigente & Aprobado
-              </span>
-            </div>
+          <div className="flex items-start gap-4">
+            <img
+              src="/logo.png"
+              alt="LICOSA"
+              className="h-12 w-auto object-contain mt-1 hidden sm:block drop-shadow-md"
+            />
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-1 rounded-full text-xs font-black bg-orange-600 text-white shadow-xs">
+                  REPORTE N° {String(report.reportNumber).padStart(3, '0')}
+                </span>
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-800 border border-slate-700 text-slate-300">
+                  Obra: {report.project?.code || project?.code || 'LICOSA'}
+                </span>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Vigente & Aprobado
+                </span>
+              </div>
 
             <h2 className="text-xl sm:text-2xl font-black text-white capitalize tracking-tight">
               {formattedDate}
@@ -134,6 +144,7 @@ export function DailyReportHtmlDashboard({
               </div>
             </div>
           </div>
+        </div>
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-2.5">
@@ -171,7 +182,7 @@ export function DailyReportHtmlDashboard({
       {/* 2. CARDS RESUMEN EJECUTIVO (KPIs con Gráficos e Indicadores)              */}
       {/* ========================================================================= */}
       <div className="p-5 sm:p-6 bg-slate-50/70 border-b border-slate-200">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           
           {/* Card 1: Avance Físico con Radial Gauge SVG */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
@@ -235,12 +246,12 @@ export function DailyReportHtmlDashboard({
               </span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-2xl font-black text-slate-900 font-mono">
-                  ${dayBilled.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${effectiveDayBilled.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
             <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500">Total Acumulado:</span>
+              <span className="text-slate-500">Total Acumulado Obra:</span>
               <span className="font-mono font-bold text-slate-800">
                 ${accumBilled.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
@@ -275,41 +286,6 @@ export function DailyReportHtmlDashboard({
                 <span>{timePercent.toFixed(1)}% consumido</span>
                 <span>{remainingDays} días rest.</span>
               </div>
-            </div>
-          </div>
-
-          {/* Card 4: Clima & Horas Afectadas */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                Condición Climática de Jornada
-              </span>
-              <div className="flex items-center gap-2 mt-1">
-                {rainHours > 0 ? (
-                  <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
-                    <CloudRain className="w-4 h-4" />
-                  </div>
-                ) : (
-                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
-                    <Sun className="w-4 h-4" />
-                  </div>
-                )}
-                <div>
-                  <p className="text-sm font-bold text-slate-800">
-                    {rainHours > 0 ? 'Lluvias Registradas' : 'Tiempo Despejado'}
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    {rainHours}h lluvia / {lostHours}h perdidas
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500">Impacto en Turno:</span>
-              <span className={`font-bold text-[11px] ${lostHours > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                {lostHours > 0 ? `-${lostHours} horas efectivas` : 'Jornada Continua'}
-              </span>
             </div>
           </div>
 
@@ -388,6 +364,14 @@ export function DailyReportHtmlDashboard({
                 <span className="text-blue-600 font-bold">{totalMachineryHoursDay.toFixed(1)}h hoy</span>
                 <span className="text-slate-300">|</span>
                 <span className="text-slate-600 font-bold">{totalMachineryHoursAccum.toFixed(1)}h acum.</span>
+                {totalMachineryCostDay > 0 && (
+                  <>
+                    <span className="text-slate-300">|</span>
+                    <span className="text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      ${totalMachineryCostDay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} costo día
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -396,10 +380,12 @@ export function DailyReportHtmlDashboard({
                 Sin maquinaria reportada en este informe.
               </div>
             ) : (
-              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
                 {machineryLogs.map((m: any, idx: number) => {
                   const hoursDay = m.dayHours || 0;
                   const hoursAccum = m.accumHours ?? hoursDay;
+                  const rate = m.hourlyRate ?? m.machinery?.hourlyRate ?? 0;
+                  const costDay = hoursDay * rate;
                   const isStandby = m.status === 'PARADO' || hoursDay === 0;
 
                   return (
@@ -426,14 +412,27 @@ export function DailyReportHtmlDashboard({
                               </span>
                             )}
                           </div>
-                          <p className="text-[10px] text-slate-400">
-                            Estado: <strong className={isStandby ? 'text-slate-500' : 'text-emerald-600'}>{m.status || (hoursDay > 0 ? 'OPERATIVO' : 'EN ESPERA')}</strong>
-                          </p>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                            <span>Estado: <strong className={isStandby ? 'text-slate-500' : 'text-emerald-600'}>{m.status || (hoursDay > 0 ? 'OPERATIVO' : 'EN ESPERA')}</strong></span>
+                            {rate > 0 && (
+                              <span className="text-emerald-700 font-semibold bg-emerald-50 px-1 rounded">
+                                ${rate.toFixed(2)}/h
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Horas del día y Horas acumuladas */}
-                      <div className="flex items-center gap-3 text-right flex-shrink-0">
+                      {/* Horas del día, Horas acumuladas y Costo */}
+                      <div className="flex items-center gap-2 sm:gap-3 text-right flex-shrink-0">
+                        {rate > 0 && (
+                          <div className="bg-emerald-50/70 px-2 py-1 rounded-lg border border-emerald-100 hidden md:block">
+                            <p className="text-[9px] uppercase font-bold text-emerald-700">Valor/h</p>
+                            <p className="text-xs font-extrabold text-emerald-800 font-mono">
+                              ${rate.toFixed(2)}
+                            </p>
+                          </div>
+                        )}
                         <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
                           <p className="text-[9px] uppercase font-bold text-slate-400">Horas Día</p>
                           <p className="text-xs font-extrabold text-blue-600 font-mono">
@@ -446,6 +445,14 @@ export function DailyReportHtmlDashboard({
                             {hoursAccum.toFixed(1)}h
                           </p>
                         </div>
+                        {rate > 0 && (
+                          <div className="bg-slate-900 text-white px-2 py-1 rounded-lg">
+                            <p className="text-[9px] uppercase font-bold text-emerald-400">Costo Día</p>
+                            <p className="text-xs font-extrabold font-mono text-emerald-300">
+                              ${costDay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -602,6 +609,33 @@ export function DailyReportHtmlDashboard({
                   );
                 })}
               </tbody>
+              <tfoot className="border-t-2 border-slate-300 font-mono">
+                {/* Fila 1: Subtotal Rubros del Día */}
+                <tr className="bg-orange-50/80 font-bold text-slate-900 border-b border-orange-200">
+                  <td colSpan={5} className="py-2.5 px-4 text-right uppercase text-[11px] font-extrabold text-orange-950 font-sans">
+                    Subtotal Rubros del Día (Jornada):
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-xs font-black text-orange-900 bg-orange-100/80">
+                    ${effectiveDayBilled.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-2.5 px-3 text-center text-slate-400 font-sans text-[11px]">-</td>
+                  <td className="py-2.5 px-4 text-slate-500 font-sans text-[10px]">Total jornada actual</td>
+                </tr>
+
+                {/* Fila 2: Monto Acumulado del Proyecto en fila independiente */}
+                <tr className="bg-slate-900 text-white font-bold">
+                  <td colSpan={5} className="py-3 px-4 text-right uppercase text-[11px] font-extrabold text-slate-200 font-sans">
+                    Monto Total Acumulado del Proyecto (Hasta esta fecha):
+                  </td>
+                  <td className="py-3 px-3 text-center text-slate-400 font-sans text-[11px]">-</td>
+                  <td className="py-3 px-3 text-right text-xs font-black text-emerald-400 bg-slate-800">
+                    ${accumBilled.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-3 px-4 text-emerald-300 text-xs font-bold font-sans">
+                    {progressPercent.toFixed(2)}% del contrato
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}

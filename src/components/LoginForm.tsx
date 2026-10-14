@@ -46,10 +46,13 @@ export function LoginForm() {
       <div className="w-full max-w-md space-y-6">
         {/* Brand Header */}
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 rounded-2xl bg-orange-600 text-white flex items-center justify-center mx-auto shadow-xl shadow-orange-600/30">
-            <HardHat className="w-8 h-8" />
+          <div className="flex justify-center mb-3">
+            <img
+              src="/logo.png"
+              alt="LICOSA"
+              className="h-20 w-auto object-contain drop-shadow-xl"
+            />
           </div>
-          <h1 className="text-2xl font-black tracking-wider text-white">LICOSA</h1>
           <p className="text-xs text-orange-400 font-bold uppercase tracking-widest">
             Control de Obra Vial & Gestión de Bodega
           </p>

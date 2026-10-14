@@ -3,6 +3,7 @@ import './globals.css';
 import { Navigation } from '@/components/Navigation';
 import { getCurrentUser } from '@/lib/auth';
 import { AiChatAssistant } from '@/components/chat/AiChatAssistant';
+import { AiChatProvider } from '@/components/chat/AiChatContext';
 
 export const metadata: Metadata = {
   title: 'LICOSA - Control de Obra Vial & Bodega',
@@ -19,10 +20,12 @@ export default async function RootLayout({
   return (
     <html lang="es" className="h-full bg-slate-50 text-slate-900 antialiased">
       <body className="min-h-full flex flex-col font-sans">
-        <Navigation currentUser={currentUser}>
-          {children}
-        </Navigation>
-        {currentUser && <AiChatAssistant />}
+        <AiChatProvider>
+          <Navigation currentUser={currentUser}>
+            {children}
+          </Navigation>
+          {currentUser && <AiChatAssistant />}
+        </AiChatProvider>
       </body>
     </html>
   );

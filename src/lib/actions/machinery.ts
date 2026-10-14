@@ -25,6 +25,7 @@ export async function createMachinery(data: {
   plateOrSerial?: string;
   unit?: string;
   status?: string;
+  hourlyRate?: number;
 }) {
   const machine = await prisma.machinery.create({
     data: {
@@ -34,11 +35,58 @@ export async function createMachinery(data: {
       plateOrSerial: data.plateOrSerial,
       unit: data.unit || 'hora',
       status: data.status || 'OPERATIVO',
+      hourlyRate: data.hourlyRate || 0,
     },
   });
 
   revalidatePath('/maquinaria');
   return machine;
+}
+
+export async function updateMachinery(
+  id: string,
+  data: {
+    code?: string;
+    name?: string;
+    category?: string;
+    plateOrSerial?: string;
+    unit?: string;
+    status?: string;
+    hourlyRate?: number;
+  }
+) {
+  const { getCurrentUser } = await import('@/lib/auth');
+  const { recordAuditLog } = await import('@/lib/audit');
+
+  const user = await getCurrentUser();
+  if (user?.role !== 'ADMIN') {
+    throw new Error('Permiso denegado: Solo los administradores pueden editar maquinaria y sus valores hora.');
+  }
+
+  const updated = await prisma.machinery.update({
+    where: { id },
+    data: {
+      ...(data.code ? { code: data.code.trim().toUpperCase() } : {}),
+      ...(data.name ? { name: data.name.trim() } : {}),
+      ...(data.category ? { category: data.category } : {}),
+      ...(data.unit ? { unit: data.unit } : {}),
+      ...(data.status ? { status: data.status } : {}),
+      ...(data.plateOrSerial !== undefined ? { plateOrSerial: data.plateOrSerial } : {}),
+      ...(data.hourlyRate !== undefined ? { hourlyRate: Number(data.hourlyRate) || 0 } : {}),
+    },
+  });
+
+  await recordAuditLog({
+    action: 'MAQUINARIA_ACTUALIZADA',
+    entityType: 'Machinery',
+    entityId: id,
+    description: `Actualización de equipo [${updated.code}] ${updated.name}. Valor hora: $${updated.hourlyRate}/h`,
+    metadata: data,
+  });
+
+  revalidatePath('/maquinaria');
+  revalidatePath('/reportes');
+  return updated;
 }
 
 export async function updateMachineryStatus(id: string, status: string) {
