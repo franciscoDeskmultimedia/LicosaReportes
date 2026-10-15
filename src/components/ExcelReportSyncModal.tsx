@@ -708,13 +708,22 @@ export function ExcelReportSyncModal({
 
                           {/* Date and Report number */}
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs sm:text-sm font-black text-slate-900">
                                 {item.date}
                               </span>
-                              <span className="text-xs text-slate-500">
-                                (Reporte N° {item.reportNumber})
-                              </span>
+                              <div className="flex items-center gap-1 bg-slate-100 rounded-lg px-2 py-0.5 border border-slate-200">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">RDO N°</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={item.reportNumber}
+                                  onChange={(e) => handleReportNumberChange(item.date, parseInt(e.target.value) || 1)}
+                                  className="w-12 text-xs font-black text-slate-800 bg-transparent text-center focus:outline-none focus:ring-1 focus:ring-orange-500 rounded"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="Número de reporte (inferido automáticamente por fecha)"
+                                />
+                              </div>
                             </div>
                             <span className="text-[11px] text-slate-500 block">
                               Origen: {item.sourceSheet} • {item.rubrosCount} rubros ejecutados

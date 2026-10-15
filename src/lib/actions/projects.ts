@@ -667,6 +667,15 @@ export async function parseProjectExcel(formData: FormData): Promise<ParsedProje
       let colQty = 4;
       let colType = 6;
 
+      // Extraer título / nombre de obra si está en la fila 0 o 1
+      if (!projectData.name && rows[0]?.[0]) {
+        const title = String(rows[0][0]);
+        if (title.toUpperCase().includes('OBRA') || title.toUpperCase().includes('PROYECTO')) {
+          const cleanedTitle = title.replace(/^CONTROL DE RUBROS\s*-\s*/i, '').replace(/\s*-\s*LICOSA$/i, '').trim();
+          if (cleanedTitle.length > 3) projectData.name = cleanedTitle;
+        }
+      }
+
       // Buscar fila de encabezados
       for (let i = 0; i < Math.min(20, rows.length); i++) {
         const row = rows[i];
@@ -681,7 +690,7 @@ export async function parseProjectExcel(formData: FormData): Promise<ParsedProje
             else if (text.includes('DESCRIP') || text.includes('DETALLE') || text.includes('CONCEPTO')) colDesc = cIdx;
             else if (text.includes('UNID') || text.includes('MEDIDA') || text === 'U.') colUnit = cIdx;
             else if (text.includes('P.U') || text.includes('PRECIO') || text.includes('UNITARIO')) colPrice = cIdx;
-            else if (text.includes('CANT') || text.includes('VOLUMEN')) colQty = cIdx;
+            else if ((text.includes('CANT') || text.includes('VOLUMEN')) && !text.includes('ACUM') && !text.includes('%') && !text.includes('EJEC')) colQty = cIdx;
             else if (text.includes('TIPO') || text.includes('CLASIF')) colType = cIdx;
           });
           break;

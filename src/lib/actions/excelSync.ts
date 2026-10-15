@@ -159,7 +159,7 @@ function extractFullRdoData(
 } {
   const d = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
   let rawDate: any = null;
-  let reportNumber = 1;
+  let reportNumber = 0;
   let dayAmount = 0;
 
   for (let r = 0; r < Math.min(15, d.length); r++) {
@@ -170,9 +170,16 @@ function extractFullRdoData(
       if (cell === 'FECHA:' || cell === 'FECHA') {
         rawDate = row[c + 1] || row[c + 2];
       }
-      if (cell.includes('REPORTE N') || cell.includes('REPORTE Nº')) {
-        const num = parseNum(row[c + 1] || row[c + 2]);
-        if (num > 0) reportNumber = Math.round(num);
+      if (cell.includes('REPORTE N') || cell.includes('REPORTE Nº') || cell === 'RDO' || cell.startsWith('RDO N')) {
+        const cellDigits = cell.replace(/[^0-9]/g, '');
+        if (cellDigits.length > 0 && cellDigits.length <= 5) {
+          reportNumber = parseInt(cellDigits, 10);
+        } else {
+          const n1 = parseNum(row[c + 1]);
+          const n2 = typeof row[c + 2] === 'number' ? row[c + 2] : (typeof row[c + 2] === 'string' && !String(row[c + 2]).includes(':') ? parseNum(row[c + 2]) : 0);
+          if (n1 > 0) reportNumber = Math.round(n1);
+          else if (n2 > 0) reportNumber = Math.round(n2);
+        }
       }
       if (cell.includes('MONTO DE TRABAJOS EJECUTADOS')) {
         const amt = parseNum(row[c + 1] || row[c + 2]);
@@ -181,9 +188,16 @@ function extractFullRdoData(
     }
   }
 
+  // Si no se encontró número en las celdas, verificar si el nombre de la pestaña lo contiene (ej. RDO_05, Reporte 12)
+  if (reportNumber <= 0) {
+    const matchSheet = sheetName.match(/RDO[_\s-]*(\d+)/i) || sheetName.match(/REP[_\s-]*(\d+)/i);
+    if (matchSheet) {
+      reportNumber = parseInt(matchSheet[1], 10);
+    }
+  }
+
   // Fallbacks estándar por celdas típicas en plantilla LICOSA
   if (!rawDate && d[4]?.[2]) rawDate = d[4]?.[2];
-  if (reportNumber === 1 && d[4]?.[5]) reportNumber = Math.round(parseNum(d[4]?.[5], 1));
   if (dayAmount === 0 && d[5]?.[2]) dayAmount = parseNum(d[5]?.[2], 0);
 
   let dateStr = '';
@@ -667,8 +681,10 @@ export async function analyzeExcelBuffer(
 
       if (existingInItems) {
         // COINCIDENCIA: La fecha existe en Registro Diario Y en RDO
-        // 1. Adoptar el N° de reporte oficial de la hoja RDO
-        existingInItems.reportNumber = rdoResult.reportNumber;
+        // 1. Adoptar el N° de reporte oficial de la hoja RDO solo si es válido (> 0)
+        if (rdoResult.reportNumber > 0) {
+          existingInItems.reportNumber = rdoResult.reportNumber;
+        }
         existingInItems.sourceSheet = `Híbrido (${rdoSheet} + Registro Diario)`;
         existingInItems.rdoData = rdoResult.rdoDetails;
 
@@ -729,7 +745,7 @@ export async function analyzeExcelBuffer(
         const syncItem: ReportSyncItem = {
           id: existingInDb?.id,
           date: rdoDate,
-          reportNumber: rdoResult.reportNumber,
+          reportNumber: rdoResult.reportNumber > 0 ? rdoResult.reportNumber : (existingInDb?.reportNumber ?? 0),
           status,
           statusLabel,
           sourceSheet: rdoSheet,
@@ -751,8 +767,49 @@ export async function analyzeExcelBuffer(
     }
   }
 
-  // Ordenar cronológicamente
+  // 1. Ordenar cronológicamente por fecha
   items.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  // 2. Inferencia inteligente de números de reporte por orden cronológico y prevención de duplicados
+  const usedReportNumbers = new Set<number>();
+  project.dailyReports.forEach((r) => usedReportNumbers.add(r.reportNumber));
+
+  // Asignar reportes existentes en la base de datos
+  for (const item of items) {
+    const existingRep = existingReportsByDate.get(item.date);
+    if (existingRep) {
+      item.reportNumber = existingRep.reportNumber;
+      usedReportNumbers.add(item.reportNumber);
+    }
+  }
+
+  // Para reportes nuevos:
+  // Si traen número explícito válido (> 0) y no colisiona, se mantiene.
+  // Si no traen número (0 / null) o colisiona con otro reporte, se infiere correlativamente por fecha.
+  const claimedItems = new Set<ReportSyncItem>();
+  for (const item of items) {
+    const existingRep = existingReportsByDate.get(item.date);
+    if (existingRep) {
+      claimedItems.add(item);
+      continue;
+    }
+    if (item.reportNumber && item.reportNumber > 0 && !usedReportNumbers.has(item.reportNumber)) {
+      usedReportNumbers.add(item.reportNumber);
+      claimedItems.add(item);
+    }
+  }
+
+  let nextAvailableNum = 1;
+  for (const item of items) {
+    if (claimedItems.has(item)) continue;
+
+    while (usedReportNumbers.has(nextAvailableNum)) {
+      nextAvailableNum++;
+    }
+    item.reportNumber = nextAvailableNum;
+    usedReportNumbers.add(nextAvailableNum);
+    claimedItems.add(item);
+  }
 
   const newCount = items.filter((i) => i.status === 'NEW').length;
   const discrepancyCount = items.filter((i) => i.status === 'DISCREPANCY').length;
@@ -992,7 +1049,40 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
     }
   }
 
-  // 3. Ejecutar las inserciones/actualizaciones en PostgreSQL
+  // 3. Salvaguarda definitiva de unicidad de reportNumber en PostgreSQL
+  const existingDbReports = await prisma.dailyReport.findMany({
+    where: { projectId },
+    select: { id: true, reportNumber: true, date: true },
+  });
+  const dbUsedNumbers = new Set(existingDbReports.map((r) => r.reportNumber));
+
+  // Ordenar cronológicamente para mantener el orden secuencial por fecha
+  preparedTimeline.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  let nextSafeNumber = 1;
+  for (const prep of preparedTimeline) {
+    if (!prep.item) continue;
+    const it = prep.item;
+
+    if (it.status === 'DISCREPANCY' && prep.existingId) {
+      const match = existingDbReports.find((r) => r.id === prep.existingId);
+      if (match) {
+        it.reportNumber = match.reportNumber;
+      }
+    } else if (it.status === 'NEW') {
+      if (!it.reportNumber || it.reportNumber <= 0 || dbUsedNumbers.has(it.reportNumber)) {
+        while (dbUsedNumbers.has(nextSafeNumber)) {
+          nextSafeNumber++;
+        }
+        it.reportNumber = nextSafeNumber;
+        dbUsedNumbers.add(nextSafeNumber);
+      } else {
+        dbUsedNumbers.add(it.reportNumber);
+      }
+    }
+  }
+
+  // 4. Ejecutar las inserciones/actualizaciones en PostgreSQL
   let createdCount = 0;
   let updatedCount = 0;
   const timeSlots = ['0-6', '6-8', '8-10', '10-12', '12-14', '14-16', '16-18', '18-24'];
