@@ -1,12 +1,64 @@
 // Licosa PWA Service Worker for Web Push Notifications & Offline Shell
 const CACHE_NAME = 'licosa-v1';
+const PRECACHE_ASSETS = [
+  '/',
+  '/manifest.json',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
+  '/icons/apple-touch-icon.png',
+];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
+        console.warn('[SW] Error en precache inicial:', err);
+      });
+    })
+  );
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
+});
+
+// Fetch event listener (Required for Chromium PWA installability criteria)
+self.addEventListener('fetch', (event) => {
+  // Only handle GET requests
+  if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+
+  // Avoid intercepting API calls, Next.js server actions, and external endpoints
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/')) {
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request).catch(async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cachedResponse = await cache.match(event.request);
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+      return new Response('Sin conexión a internet. Por favor verifica tu red.', {
+        status: 503,
+        statusText: 'Offline',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    })
+  );
 });
 
 // Listen for Web Push Notifications
@@ -28,8 +80,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'LICOSA Obras';
   const options = {
     body: data.body,
-    icon: '/logo.png',
-    badge: '/logo.png',
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-192x192.png',
     vibrate: [200, 100, 200],
     data: {
       url: data.url || '/',

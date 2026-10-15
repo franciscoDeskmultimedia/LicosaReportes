@@ -125,13 +125,17 @@ export const AI_TOOLS_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'getMachineryStatus',
-      description: 'Consulta el parque de maquinaria pesada y equipos asignados a la obra y su estado operativo (OPERATIVO, EN_MANTENIMIENTO, PARADO).',
+      description: 'Consulta el parque de maquinaria pesada y equipos: horas trabajadas reales (calculadas desde los reportes diarios de obra), valor por hora ($/h), valor generado acumulado, estado operativo (OPERATIVO, EN_MANTENIMIENTO, AVERIADO) y desglose de horas por obra o por reporte diario.',
       parameters: {
         type: 'object',
         properties: {
           projectId: {
             type: 'string',
-            description: 'Opcional: ID del proyecto para ver maquinaria de esa obra.',
+            description: 'Opcional: ID, código o nombre del proyecto u obra para consultar las maquinarias y horas trabajadas en esa obra específica (ej: "Valle de la Virgen", "Villa de la Virgen", "VALLE-001", "Narcisa Club").',
+          },
+          machineryCodeOrName: {
+            type: 'string',
+            description: 'Opcional: Código o nombre de una maquinaria específica (ej: "EX09", "TR-08", "Excavadora", "Volqueta").',
           },
         },
       },
@@ -161,21 +165,45 @@ export const AI_TOOLS_DEFINITIONS: ToolDefinition[] = [
 ];
 
 /**
- * Resuelve el projectId real en caso de que el modelo haya pasado el código del proyecto (ej: "VALLE-001")
+ * Resuelve el projectId real en caso de que el modelo haya pasado el código o nombre del proyecto (ej: "VALLE-001", "villa de la virgen")
  */
 async function resolveProjectId(idOrCode: string): Promise<string | null> {
   if (!idOrCode) return null;
+  const cleanQuery = idOrCode.trim();
+
+  // 1. Coincidencia directa por ID, código exacto o contains en nombre/código
   const project = await prisma.project.findFirst({
     where: {
       OR: [
-        { id: idOrCode },
-        { code: { equals: idOrCode, mode: 'insensitive' } },
-        { name: { contains: idOrCode, mode: 'insensitive' } },
+        { id: cleanQuery },
+        { code: { equals: cleanQuery, mode: 'insensitive' } },
+        { name: { equals: cleanQuery, mode: 'insensitive' } },
+        { name: { contains: cleanQuery, mode: 'insensitive' } },
+        { code: { contains: cleanQuery, mode: 'insensitive' } },
       ],
     },
     select: { id: true },
   });
-  return project ? project.id : null;
+  if (project) return project.id;
+
+  // 2. Coincidencia difusa por palabras clave (ej: "villa dela virgen" -> "virgen", "narcisa club" -> "narcisa")
+  const words = cleanQuery
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !['obra', 'proyecto', 'el', 'la', 'los', 'las', 'de', 'del'].includes(w));
+
+  const allProjects = await prisma.project.findMany({ select: { id: true, name: true, code: true } });
+  for (const proj of allProjects) {
+    const full = `${proj.name} ${proj.code}`.toLowerCase();
+    for (const word of words) {
+      if (full.includes(word)) {
+        return proj.id;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -378,6 +406,11 @@ export async function executeAiTool(name: string, args: Record<string, any>): Pr
           include: {
             project: { select: { code: true, name: true } },
             hourlyWeather: { take: 1, orderBy: { timeSlot: 'asc' } },
+            machineryLogs: {
+              include: {
+                machinery: { select: { code: true, name: true, category: true, hourlyRate: true } },
+              },
+            },
             rubroExecutions: {
               include: {
                 projectRubro: { select: { rubroNumber: true, description: true, unit: true } },
@@ -405,6 +438,12 @@ export async function executeAiTool(name: string, args: Record<string, any>): Pr
             novedadesYRiesgos: rep.noveltiesRisks || 'Sin novedades registradas',
             comentariosContratista: rep.contractorComments || 'Ninguno',
             comentariosFiscalizacion: rep.supervisorComments || 'Ninguno',
+            maquinariaOperadaHoy: rep.machineryLogs.map((ml) => ({
+              codigo: ml.machinery?.code || 'N/A',
+              nombre: ml.machinery?.name || ml.description,
+              horasTrabajadasHoy: ml.dayHours,
+              notas: ml.notes || 'Normal',
+            })),
             rubrosEjecutadosEnEsteDia: rep.rubroExecutions.map((re) => ({
               rubro: re.projectRubro.rubroNumber,
               descripcion: re.projectRubro.description,
@@ -449,21 +488,161 @@ export async function executeAiTool(name: string, args: Record<string, any>): Pr
       }
 
       case 'getMachineryStatus': {
-        const machinery = await prisma.machinery.findMany({
+        const resolvedId = args.projectId ? await resolveProjectId(args.projectId) : undefined;
+        const machineryQuery = args.machineryCodeOrName
+          ? String(args.machineryCodeOrName).trim().toLowerCase()
+          : '';
+
+        const allMachinery = await prisma.machinery.findMany({
           orderBy: { code: 'asc' },
+          include: {
+            dailyLogs: {
+              include: {
+                dailyReport: {
+                  select: {
+                    id: true,
+                    reportNumber: true,
+                    date: true,
+                    projectId: true,
+                    project: { select: { id: true, code: true, name: true } },
+                  },
+                },
+              },
+            },
+          },
         });
 
-        return {
-          total: machinery.length,
-          maquinaria: machinery.map((m) => ({
+        // Caso 1: Se solicita una obra específica (ej: "Valle de la Virgen", "VALLE-001")
+        if (resolvedId) {
+          const project = await prisma.project.findUnique({
+            where: { id: resolvedId },
+            select: { id: true, code: true, name: true },
+          });
+
+          const projectMachinery: any[] = [];
+          let totalHoursInProject = 0;
+          let totalValueInProject = 0;
+
+          for (const m of allMachinery) {
+            if (
+              machineryQuery &&
+              !m.code.toLowerCase().includes(machineryQuery) &&
+              !m.name.toLowerCase().includes(machineryQuery) &&
+              !m.category.toLowerCase().includes(machineryQuery)
+            ) {
+              continue;
+            }
+
+            const projLogs = m.dailyLogs.filter((l) => l.dailyReport?.projectId === resolvedId);
+            const projHours = projLogs.reduce((acc, l) => acc + (l.dayHours || 0), 0);
+            const rate = m.hourlyRate || 0;
+            const projValue = projLogs.reduce(
+              (acc, l) => acc + (l.dayHours || 0) * (l.hourlyRate ?? rate),
+              0
+            );
+
+            if (projLogs.length > 0 || projHours > 0) {
+              totalHoursInProject += projHours;
+              totalValueInProject += projValue;
+
+              projectMachinery.push({
+                codigo: m.code,
+                nombre: m.name,
+                categoria: m.category,
+                estadoOperativo: m.status,
+                tarifaHora: `$${rate.toFixed(2)}/h`,
+                horasTrabajadasEnEstaObra: Number(projHours.toFixed(1)),
+                valorGeneradoEnEstaObra: `$${projValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                totalReportesEnObra: projLogs.length,
+                desglosePorReporte: projLogs.slice(0, 10).map((l) => ({
+                  reporteNumero: l.dailyReport.reportNumber,
+                  fecha: l.dailyReport.date.toISOString().split('T')[0],
+                  horasDia: Number((l.dayHours || 0).toFixed(1)),
+                  notas: l.notes || 'Normal',
+                })),
+              });
+            }
+          }
+
+          projectMachinery.sort((a, b) => b.horasTrabajadasEnEstaObra - a.horasTrabajadasEnEstaObra);
+
+          return {
+            obra: project?.name || 'Obra Encontrada',
+            codigoObra: project?.code,
+            totalMaquinariasEnEstaObra: projectMachinery.length,
+            totalHorasTrabajadasEnEstaObra: Number(totalHoursInProject.toFixed(1)),
+            totalValorGeneradoEnEstaObra: `$${totalValueInProject.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            maquinarias: projectMachinery,
+          };
+        }
+
+        // Caso 2: Consulta global de maquinaria de la empresa
+        let filteredMachinery = allMachinery;
+        if (machineryQuery) {
+          filteredMachinery = allMachinery.filter(
+            (m) =>
+              m.code.toLowerCase().includes(machineryQuery) ||
+              m.name.toLowerCase().includes(machineryQuery) ||
+              m.category.toLowerCase().includes(machineryQuery)
+          );
+        }
+
+        let totalGlobalHours = 0;
+        let totalGlobalValue = 0;
+
+        const results = filteredMachinery.map((m) => {
+          const totalHours = Math.max(
+            m.totalHoursWorked || 0,
+            m.dailyLogs.reduce((acc, l) => acc + (l.dayHours || 0), 0)
+          );
+          const rate = m.hourlyRate || 0;
+          const totalVal = m.dailyLogs.reduce(
+            (acc, l) => acc + (l.dayHours || 0) * (l.hourlyRate ?? rate),
+            0
+          );
+
+          totalGlobalHours += totalHours;
+          totalGlobalValue += totalVal;
+
+          // Agrupación por proyectos donde ha trabajado
+          const projectMap = new Map<string, { proyecto: string; codigo: string; horas: number; reportes: number }>();
+          m.dailyLogs.forEach((l) => {
+            const pId = l.dailyReport?.project?.id || 'sin_obra';
+            const pName = l.dailyReport?.project?.name || 'Sin Asignar';
+            const pCode = l.dailyReport?.project?.code || 'N/A';
+            const current = projectMap.get(pId) || { proyecto: pName, codigo: pCode, horas: 0, reportes: 0 };
+            current.horas += l.dayHours || 0;
+            current.reportes += 1;
+            projectMap.set(pId, current);
+          });
+
+          return {
             codigo: m.code,
             nombre: m.name,
             categoria: m.category,
             placaOSerie: m.plateOrSerial || 'N/A',
             unidad: m.unit,
             estadoOperativo: m.status,
-            horasTrabajadasAcumuladas: m.totalHoursWorked,
-          })),
+            tarifaHora: `$${rate.toFixed(2)}/h`,
+            horasTrabajadasAcumuladas: Number(totalHours.toFixed(1)),
+            valorGeneradoAcumulado: `$${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            totalReportesDiarios: m.dailyLogs.length,
+            desglosePorObra: Array.from(projectMap.values()).map((p) => ({
+              obra: p.proyecto,
+              codigoObra: p.codigo,
+              horas: Number(p.horas.toFixed(1)),
+              reportes: p.reportes,
+            })),
+          };
+        });
+
+        results.sort((a, b) => b.horasTrabajadasAcumuladas - a.horasTrabajadasAcumuladas);
+
+        return {
+          totalMaquinarias: results.length,
+          totalHorasConsolidadas: Number(totalGlobalHours.toFixed(1)),
+          totalValorConsolidado: `$${totalGlobalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          maquinarias: results,
         };
       }
 

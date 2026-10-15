@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { AiChatAssistant } from '@/components/chat/AiChatAssistant';
 import { AiChatProvider } from '@/components/chat/AiChatContext';
 import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
+import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 
 export const viewport: Viewport = {
   themeColor: '#ea580c',
@@ -23,8 +24,13 @@ export const metadata: Metadata = {
     title: 'LICOSA',
   },
   icons: {
-    icon: '/logo.png',
-    apple: '/logo.png',
+    icon: [
+      { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
   },
 };
 
@@ -39,6 +45,7 @@ export default async function RootLayout({
     <html lang="es" className="h-full bg-slate-50 text-slate-900 antialiased">
       <body className="min-h-full flex flex-col font-sans">
         <ServiceWorkerRegister />
+        <PwaInstallPrompt />
         <AiChatProvider>
           <Navigation currentUser={currentUser}>
             {children}
