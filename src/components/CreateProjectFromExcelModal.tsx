@@ -27,6 +27,7 @@ import {
   ParsedProjectExcelResult,
   ProjectImportSuggestion,
 } from '@/lib/actions/projects';
+import { parseProjectFileClient, stripHeavySheets } from '@/lib/projectExcelParser';
 
 interface CreateProjectFromExcelModalProps {
   isOpen: boolean;
@@ -64,10 +65,16 @@ export function CreateProjectFromExcelModal({
     setAppliedSuggestions(new Set());
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      // Parsear directamente en cliente para procesar al instante y soportar archivos grandes (>4.5MB con fotos)
+      let res = await parseProjectFileClient(file);
 
-      const res = await parseProjectExcel(formData);
+      // Fallback a servidor si por alguna razón el parser del cliente fallara
+      if (!res.success) {
+        const cleanFile = await stripHeavySheets(file);
+        const formData = new FormData();
+        formData.append('file', cleanFile);
+        res = await parseProjectExcel(formData);
+      }
 
       if (!res.success) {
         setError(res.error || 'No se pudo leer el archivo Excel.');

@@ -34,6 +34,7 @@ import {
   ExcelAnalysisResult,
   ReportSyncItem,
 } from '@/lib/actions/excelSync';
+import { stripHeavySheets } from '@/lib/projectExcelParser';
 
 interface ExcelReportSyncModalProps {
   isOpen: boolean;
@@ -104,8 +105,10 @@ export function ExcelReportSyncModal({
       if (localPath) {
         result = await analyzeLocalExcelFile(localPath, selectedProjectId || undefined);
       } else if (file) {
+        // Aligerar el archivo si excede 3MB (removiendo álbumes de fotos pesados) para cumplir límite de Vercel (4.5MB)
+        const cleanFile = await stripHeavySheets(file);
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', cleanFile);
         if (selectedProjectId) {
           formData.append('projectId', selectedProjectId);
         }
