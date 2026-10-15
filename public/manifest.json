@@ -1,0 +1,25 @@
+{
+  "name": "LICOSA - Control de Obras y Reportes",
+  "short_name": "Licosa",
+  "description": "Sistema Integral de Reportes Diarios, Maquinaria y Control de Obras",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#ea580c",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

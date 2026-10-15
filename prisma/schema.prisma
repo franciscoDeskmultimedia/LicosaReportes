@@ -467,4 +467,17 @@ model ProjectExpense {
   @@index([supplier])
 }
 
+model PushSubscription {
+  id          String   @id @default(uuid())
+  userId      String?
+  endpoint    String   @unique
+  p256dh      String
+  auth        String
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
 

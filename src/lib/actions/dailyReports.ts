@@ -425,6 +425,25 @@ export async function createDailyReport(data: {
     },
   });
 
+  // Disparar Notificación Web Push a los dispositivos suscritos
+  try {
+    const proj = await prisma.project.findUnique({
+      where: { id: data.projectId },
+      select: { code: true, name: true },
+    });
+    const { notifyNewDailyReport } = await import('@/lib/pushNotifications');
+    await notifyNewDailyReport({
+      id: result.id,
+      reportNumber: data.reportNumber,
+      projectCode: proj?.code || 'OBRA',
+      projectName: proj?.name || 'Obra en ejecución',
+      engineerName: data.reviewedByName || data.preparedByName,
+      dateStr: data.date.substring(0, 10),
+    });
+  } catch (pushErr) {
+    console.error('Error al enviar notificación push de reporte diario:', pushErr);
+  }
+
   revalidatePath('/reportes');
   revalidatePath('/');
   return result;

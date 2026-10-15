@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Truck,
   PlusCircle,
@@ -42,6 +42,9 @@ export interface MachineryItem {
       reportNumber: number;
       date: Date | string;
       roadSection?: string;
+      rainHoursDay?: number;
+      lostRainHoursDay?: number;
+      noveltiesRisks?: string | null;
       project?: {
         id: string;
         code: string;
@@ -59,11 +62,24 @@ export function MachineryView({
   isAdmin?: boolean;
 }) {
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('TODAS');
+  const [statusFilter, setStatusFilter] = useState('TODOS');
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedMachine, setSelectedMachine] = useState<MachineryItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MachineryItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Dynamic unique categories
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    machinery.forEach((m) => {
+      if (m.category && m.category.trim()) {
+        set.add(m.category.trim());
+      }
+    });
+    return ['TODAS', ...Array.from(set).sort()];
+  }, [machinery]);
 
   // Create state
   const [code, setCode] = useState('');
@@ -84,11 +100,27 @@ export function MachineryView({
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  const filtered = machinery.filter((m) =>
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    m.code.toLowerCase().includes(search.toLowerCase()) ||
-    m.category.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return machinery.filter((m) => {
+      const matchSearch =
+        !q ||
+        m.name.toLowerCase().includes(q) ||
+        m.code.toLowerCase().includes(q) ||
+        m.category.toLowerCase().includes(q) ||
+        (m.plateOrSerial && m.plateOrSerial.toLowerCase().includes(q));
+
+      const matchCategory =
+        categoryFilter === 'TODAS' ||
+        m.category.toLowerCase() === categoryFilter.toLowerCase();
+
+      const matchStatus =
+        statusFilter === 'TODOS' ||
+        m.status === statusFilter;
+
+      return matchSearch && matchCategory && matchStatus;
+    });
+  }, [machinery, search, categoryFilter, statusFilter]);
 
   function openEditModal(m: MachineryItem) {
     setEditTarget(m);
@@ -189,6 +221,128 @@ export function MachineryView({
           <span>+ Registrar Nuevo Equipo</span>
         </button>
       </div>
+
+      {/* SEARCH AND CATEGORY FILTER TOOLBAR */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Search Input */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por código (EX09, TR-08), nombre o placa..."
+              className="w-full pl-10 pr-9 py-2 bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-xs font-medium text-slate-900 border border-slate-200 focus:border-orange-500 rounded-xl transition-all outline-none"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Status quick select */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className="text-[11px] font-bold text-slate-500 uppercase">Estado:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 rounded-xl outline-none focus:border-orange-500 cursor-pointer"
+            >
+              <option value="TODOS">Todos los estados</option>
+              <option value="OPERATIVO">Solo Operativos</option>
+              <option value="EN_MANTENIMIENTO">En Mantenimiento</option>
+              <option value="AVERIADO">Averiados / Taller</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Category Filter Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 border-t border-slate-100">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+            <Truck className="w-3.5 h-3.5 text-orange-600" />
+            <span>Categoría:</span>
+          </span>
+          {categories.map((cat) => {
+            const isSelected = categoryFilter.toLowerCase() === cat.toLowerCase();
+            const count =
+              cat === 'TODAS'
+                ? machinery.length
+                : machinery.filter((m) => m.category.toLowerCase() === cat.toLowerCase()).length;
+
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategoryFilter(cat)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  isSelected
+                    ? 'bg-orange-600 text-white shadow-xs shadow-orange-600/20'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/80 hover:text-slate-900'
+                }`}
+              >
+                <span>{cat === 'TODAS' ? 'Todas' : cat}</span>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                    isSelected ? 'bg-orange-700/60 text-white' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Active Filters Summary */}
+        <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+          <span>
+            Mostrando <strong>{filtered.length}</strong> de <strong>{machinery.length}</strong> maquinarias registradas
+          </span>
+          {(search || categoryFilter !== 'TODAS' || statusFilter !== 'TODOS') && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setCategoryFilter('TODAS');
+                setStatusFilter('TODOS');
+              }}
+              className="text-orange-600 hover:text-orange-700 font-bold hover:underline cursor-pointer"
+            >
+              Restablecer filtros
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Empty State when no machines match search/category */}
+      {filtered.length === 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center mx-auto">
+            <Search className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-slate-900">No se encontraron maquinarias</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            No hay equipos que coincidan con la búsqueda "{search}" o la categoría "{categoryFilter}".
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('');
+              setCategoryFilter('TODAS');
+              setStatusFilter('TODOS');
+            }}
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+          >
+            Limpiar filtros
+          </button>
+        </div>
+      )}
 
       {/* Machinery Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

@@ -11,6 +11,9 @@ export interface MachineryLogExportItem {
     reportNumber: number;
     date: Date | string;
     roadSection?: string;
+    rainHoursDay?: number;
+    lostRainHoursDay?: number;
+    noveltiesRisks?: string | null;
     project?: {
       id: string;
       code: string;
@@ -52,6 +55,9 @@ function buildDailyTimeline(logs: MachineryLogExportItem[], rate: number) {
       projectName?: string;
       projectCode?: string;
       notes?: string;
+      rainHoursDay?: number;
+      lostRainHoursDay?: number;
+      noveltiesRisks?: string | null;
     }
   >();
 
@@ -65,6 +71,9 @@ function buildDailyTimeline(logs: MachineryLogExportItem[], rate: number) {
     existing.projectName = l.dailyReport.project?.name || existing.projectName;
     existing.projectCode = l.dailyReport.project?.code || existing.projectCode;
     existing.notes = l.notes || existing.notes;
+    existing.rainHoursDay = l.dailyReport.rainHoursDay ?? existing.rainHoursDay ?? 0;
+    existing.lostRainHoursDay = l.dailyReport.lostRainHoursDay ?? existing.lostRainHoursDay ?? 0;
+    existing.noveltiesRisks = l.dailyReport.noveltiesRisks || existing.noveltiesRisks;
     mapByDate.set(dStr, existing);
   });
 
@@ -83,6 +92,9 @@ function buildDailyTimeline(logs: MachineryLogExportItem[], rate: number) {
     reportNumber?: number;
     projectName?: string;
     notes?: string;
+    rainHoursDay?: number;
+    lostRainHoursDay?: number;
+    noveltiesRisks?: string | null;
   }> = [];
 
   let runningHours = 0;
@@ -113,6 +125,9 @@ function buildDailyTimeline(logs: MachineryLogExportItem[], rate: number) {
         reportNumber: match?.reportNumber,
         projectName: match?.projectName,
         notes: match?.notes,
+        rainHoursDay: match?.rainHoursDay,
+        lostRainHoursDay: match?.lostRainHoursDay,
+        noveltiesRisks: match?.noveltiesRisks,
       });
 
       cur.setDate(cur.getDate() + 1);
@@ -138,6 +153,9 @@ function buildDailyTimeline(logs: MachineryLogExportItem[], rate: number) {
         reportNumber: match?.reportNumber,
         projectName: match?.projectName,
         notes: match?.notes,
+        rainHoursDay: match?.rainHoursDay,
+        lostRainHoursDay: match?.lostRainHoursDay,
+        noveltiesRisks: match?.noveltiesRisks,
       });
     });
   }
@@ -145,122 +163,7 @@ function buildDailyTimeline(logs: MachineryLogExportItem[], rate: number) {
   return timeline;
 }
 
-/**
- * Draws a high-res vector graph in the PDF comparing daily activity ($0 on idle days)
- * and cumulative hours/value progression.
- */
-function drawTimelineGraph(
-  doc: jsPDF,
-  timeline: ReturnType<typeof buildDailyTimeline>,
-  totalHours: number,
-  totalValue: number,
-  yPos: number,
-  pageWidth: number,
-  title: string
-) {
-  if (timeline.length < 2) return yPos;
 
-  const graphBoxY = yPos;
-  const graphBoxHeight = 38;
-  const graphInnerWidth = pageWidth - 28;
-
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, graphBoxY, graphInnerWidth, graphBoxHeight, 2, 2, 'FD');
-
-  // Title
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text(title, 18, graphBoxY + 5.5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.2);
-  doc.setTextColor(148, 163, 184);
-  doc.text('Días planos = Sin actividad ($0 ganado) | Picos = Jornadas con horas facturadas', pageWidth - 18, graphBoxY + 5.5, {
-    align: 'right',
-  });
-
-  const chartLeft = 24;
-  const chartRight = pageWidth - 20;
-  const chartTop = graphBoxY + 8;
-  const chartBottom = graphBoxY + graphBoxHeight - 6;
-  const chartWidth = chartRight - chartLeft;
-  const chartHeight = chartBottom - chartTop;
-
-  // Gridlines
-  doc.setDrawColor(241, 245, 249);
-  doc.setLineWidth(0.2);
-  [0, 0.5, 1].forEach((pct) => {
-    const y = chartBottom - chartHeight * pct;
-    doc.line(chartLeft, y, chartRight, y);
-
-    const val = totalHours * pct;
-    const vVal = totalValue * pct;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(5);
-    doc.setTextColor(148, 163, 184);
-    doc.text(`${val.toFixed(0)}h ($${(vVal / 1000).toFixed(1)}k)`, chartLeft - 2, y + 1.2, { align: 'right' });
-  });
-
-  const maxH = Math.max(totalHours, 1);
-  const maxDayH = Math.max(...timeline.map((t) => t.dayHours), 8);
-
-  const points = timeline.map((pt, i) => {
-    const x = chartLeft + (i / Math.max(timeline.length - 1, 1)) * chartWidth;
-    const y = chartBottom - (pt.accumHours / maxH) * chartHeight;
-    const barHeight = (pt.dayHours / maxDayH) * (chartHeight * 0.45);
-    return { x, y, barHeight, pt };
-  });
-
-  // 1. Draw daily activity bars (shows 0 on days without work)
-  const barWidth = Math.min(Math.max(chartWidth / (timeline.length * 1.5), 0.6), 3.5);
-  points.forEach((p) => {
-    if (p.pt.isActive) {
-      doc.setFillColor(16, 185, 129); // Emerald for productive day
-      doc.rect(p.x - barWidth / 2, chartBottom - p.barHeight, barWidth, p.barHeight, 'F');
-    } else {
-      // Inactive day tick at baseline
-      doc.setFillColor(226, 232, 240);
-      doc.rect(p.x - 0.2, chartBottom - 0.8, 0.4, 0.8, 'F');
-    }
-  });
-
-  // 2. Draw cumulative curve area
-  doc.setFillColor(254, 215, 170); // Orange light
-  for (let i = 0; i < points.length - 1; i++) {
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    doc.triangle(p1.x, p1.y, p2.x, p2.y, p1.x, chartBottom, 'F');
-    doc.triangle(p2.x, p2.y, p2.x, chartBottom, p1.x, chartBottom, 'F');
-  }
-
-  // 3. Draw cumulative curve line
-  doc.setDrawColor(234, 88, 12);
-  doc.setLineWidth(0.65);
-  for (let i = 0; i < points.length - 1; i++) {
-    doc.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
-  }
-
-  // 4. Data points on active days
-  points.forEach((p, idx) => {
-    if (p.pt.isActive) {
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(234, 88, 12);
-      doc.setLineWidth(0.35);
-      doc.circle(p.x, p.y, 0.7, 'FD');
-    }
-
-    // Label first, middle, last
-    if (idx === 0 || idx === points.length - 1 || idx === Math.floor(points.length / 2)) {
-      doc.setFontSize(5);
-      doc.setTextColor(100, 116, 139);
-      doc.text(p.pt.formattedDate, p.x, chartBottom + 3.2, { align: 'center' });
-    }
-  });
-
-  return graphBoxY + graphBoxHeight + 5;
-}
 
 /**
  * 1. EXPORT GENERAL (TODAS LAS OBRAS)
@@ -379,16 +282,8 @@ export function exportMachineryToPdf(machine: MachineryExportData) {
     doc.text(kpi.value, x + 3, kpiY + 11);
   });
 
-  // Vector Timeline Graph with $0 idle days
-  let currentY = drawTimelineGraph(
-    doc,
-    timeline,
-    totalHours,
-    totalValue,
-    kpiY + kpiHeight + 5,
-    pageWidth,
-    'CURVA DE RENDIMIENTO Y VALOR GENERADO EN EL TIEMPO'
-  );
+  // Direct table positioning without graph
+  let currentY = kpiY + kpiHeight + 6;
 
   // Table 1: Summary by Project
   const projectTableData = projectsSummary.map((p) => {
@@ -598,16 +493,8 @@ export function exportMachineryProjectPdf(
     doc.text(kpi.value, x + 3, kpiY + 11);
   });
 
-  // Vector Timeline Graph for this Project
-  let currentY = drawTimelineGraph(
-    doc,
-    timeline,
-    projHours,
-    projValue,
-    kpiY + kpiHeight + 5,
-    pageWidth,
-    `EVOLUCIÓN DE HORAS Y VALOR EN LA OBRA: ${project.code}`
-  );
+  // Direct table positioning without graph
+  let currentY = kpiY + kpiHeight + 6;
 
   // Table: Detailed Daily Logs for this project
   const descLogs = [...projLogs].reverse();

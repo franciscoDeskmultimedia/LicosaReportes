@@ -32,6 +32,7 @@ import {
 import { logoutAction } from '@/lib/actions/auth';
 import { CurrentUser } from '@/lib/authTypes';
 import { useAiChat } from '@/components/chat/AiChatContext';
+import { PushNotificationManager } from '@/components/PushNotificationManager';
 
 interface NavItem {
   name: string;
@@ -237,6 +238,7 @@ export function Navigation({
         </Link>
 
         <div className="flex items-center gap-2">
+          {currentUser && <PushNotificationManager />}
           {currentUser && (
             <button
               onClick={toggleChat}
@@ -307,6 +309,9 @@ export function Navigation({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Notificaciones Push PWA */}
+            {currentUser && <PushNotificationManager />}
+
             {/* Botón de Asistente Copilot IA en la barra superior a la derecha */}
             {currentUser && (
               <button

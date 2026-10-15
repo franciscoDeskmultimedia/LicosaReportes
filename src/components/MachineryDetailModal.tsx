@@ -25,6 +25,8 @@ import {
   PauseCircle,
 } from 'lucide-react';
 import { exportMachineryToPdf, exportMachineryProjectPdf } from '@/lib/exportMachineryPdf';
+import { ProjectMachineryChart, ProjectMiniSparkline } from './ProjectMachineryChart';
+import { MachineryAnalyticsTabs } from './MachineryAnalyticsTabs';
 
 export interface MachineryLogItem {
   id: string;
@@ -36,6 +38,9 @@ export interface MachineryLogItem {
     reportNumber: number;
     date: Date | string;
     roadSection?: string;
+    rainHoursDay?: number;
+    lostRainHoursDay?: number;
+    noveltiesRisks?: string | null;
     project?: {
       id: string;
       code: string;
@@ -70,7 +75,6 @@ export function MachineryDetailModal({
 }: MachineryDetailProps) {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [exportingProjId, setExportingProjId] = useState<string | null>(null);
-  const [hoveredPoint, setHoveredPoint] = useState<any | null>(null);
 
   // Default hourly rate
   const rate = machine.hourlyRate || 0;
@@ -249,6 +253,9 @@ export function MachineryDetailModal({
         projectName?: string;
         projectCode?: string;
         notes?: string;
+        rainHoursDay?: number;
+        lostRainHoursDay?: number;
+        noveltiesRisks?: string | null;
       }
     >();
 
@@ -263,6 +270,9 @@ export function MachineryDetailModal({
       existing.projectName = l.dailyReport.project?.name || existing.projectName;
       existing.projectCode = l.dailyReport.project?.code || existing.projectCode;
       existing.notes = l.notes || existing.notes;
+      existing.rainHoursDay = l.dailyReport.rainHoursDay ?? existing.rainHoursDay ?? 0;
+      existing.lostRainHoursDay = l.dailyReport.lostRainHoursDay ?? existing.lostRainHoursDay ?? 0;
+      existing.noveltiesRisks = l.dailyReport.noveltiesRisks || existing.noveltiesRisks;
       mapByDate.set(dStr, existing);
     });
 
@@ -284,6 +294,9 @@ export function MachineryDetailModal({
       projectName?: string;
       projectCode?: string;
       notes?: string;
+      rainHoursDay?: number;
+      lostRainHoursDay?: number;
+      noveltiesRisks?: string | null;
     }> = [];
 
     let runningHours = 0;
@@ -325,6 +338,9 @@ export function MachineryDetailModal({
           projectName: match?.projectName,
           projectCode: match?.projectCode,
           notes: match?.notes,
+          rainHoursDay: match?.rainHoursDay,
+          lostRainHoursDay: match?.lostRainHoursDay,
+          noveltiesRisks: match?.noveltiesRisks,
         });
 
         cur.setDate(cur.getDate() + 1);
@@ -358,6 +374,9 @@ export function MachineryDetailModal({
           projectName: match?.projectName,
           projectCode: match?.projectCode,
           notes: match?.notes,
+          rainHoursDay: match?.rainHoursDay,
+          lostRainHoursDay: match?.lostRainHoursDay,
+          noveltiesRisks: match?.noveltiesRisks,
         });
       });
     }
@@ -365,45 +384,10 @@ export function MachineryDetailModal({
     return timeline;
   }, [chronLogs, rate]);
 
-  // Timeline Metrics
   const activeDaysCount = useMemo(() => dailyTimeline.filter((t) => t.isActive).length, [dailyTimeline]);
   const inactiveDaysCount = useMemo(() => dailyTimeline.filter((t) => !t.isActive).length, [dailyTimeline]);
   const utilizationRate = dailyTimeline.length > 0 ? (activeDaysCount / dailyTimeline.length) * 100 : 0;
   const avgHoursPerActiveDay = activeDaysCount > 0 ? totalComputedHours / activeDaysCount : 0;
-
-  // SVG Chart Coordinates
-  const svgWidth = 720;
-  const svgHeight = 220;
-  const padding = { top: 25, right: 30, bottom: 42, left: 55 };
-  const graphWidth = svgWidth - padding.left - padding.right;
-  const graphHeight = svgHeight - padding.top - padding.bottom;
-
-  const maxAccumHours = Math.max(effectiveTotalHours, 1);
-  const maxDayHours = Math.max(...dailyTimeline.map((t) => t.dayHours), 10);
-
-  const curvePoints = useMemo(() => {
-    return dailyTimeline.map((item, idx) => {
-      const x = padding.left + (idx / Math.max(dailyTimeline.length - 1, 1)) * graphWidth;
-      const y = padding.top + graphHeight - (item.accumHours / maxAccumHours) * graphHeight;
-      const barHeight = item.isActive ? (item.dayHours / maxDayHours) * (graphHeight * 0.45) : 0;
-
-      return {
-        x,
-        y,
-        barHeight,
-        ...item,
-      };
-    });
-  }, [dailyTimeline, graphWidth, graphHeight, maxAccumHours, maxDayHours]);
-
-  const polylinePoints = useMemo(() => {
-    return curvePoints.map((c) => `${c.x},${c.y}`).join(' ');
-  }, [curvePoints]);
-
-  const areaPoints = useMemo(() => {
-    if (curvePoints.length === 0) return '';
-    return `${curvePoints[0].x},${padding.top + graphHeight} ${polylinePoints} ${curvePoints[curvePoints.length - 1].x},${padding.top + graphHeight}`;
-  }, [curvePoints, polylinePoints, graphHeight]);
 
   const isOperative = machine.status === 'OPERATIVO';
   const isMaintenance = machine.status === 'EN_MANTENIMIENTO';
@@ -458,7 +442,7 @@ export function MachineryDetailModal({
               className="inline-flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/30 transition-all cursor-pointer disabled:opacity-50"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>{isExportingPdf ? 'Generando PDF...' : 'Descargar PDF (Todas las Obras)'}</span>
+              <span>{isExportingPdf ? 'Generando...' : 'Reporte General'}</span>
             </button>
 
             {/* Close button */}
@@ -533,249 +517,18 @@ export function MachineryDetailModal({
             </div>
           </div>
 
-          {/* 2. TIMELINE GRAPH: DIAS TRABAJADOS VS DIAS INACTIVOS ($0 GANADO) */}
+          {/* 2. MULTI-TAB ANALYTICS ENGINE */}
           {dailyTimeline.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-orange-600" />
-                    <span>Días Trabajados vs. Días Inactivos ($0 Ganado)</span>
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Las mesetas horizontales representan días donde la máquina estuvo inactiva (sin horas y $0 ganado)
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-4 text-xs font-medium flex-wrap">
-                  <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" />
-                    <span>Jornada Activa ($)</span>
-                  </span>
-                  <span className="flex items-center gap-1.5 text-slate-400 font-medium">
-                    <span className="w-2.5 h-0.5 bg-slate-300 inline-block" />
-                    <span>Inactivo ($0)</span>
-                  </span>
-                  <span className="flex items-center gap-1.5 text-orange-600 font-bold">
-                    <span className="w-3 h-1 bg-orange-600 inline-block rounded-full" />
-                    <span>Acumulado: ${totalValueGenerated.toLocaleString('es-EC', { maximumFractionDigits: 0 })}</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Sub-banner de indicadores de productividad */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px]">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Total Período: <strong className="text-slate-900">{dailyTimeline.length} días</strong></span>
-                </div>
-                <div className="flex items-center gap-2 text-emerald-700">
-                  <Zap className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Días Productivos: <strong className="font-bold">{activeDaysCount}</strong> ({utilizationRate.toFixed(0)}%)</span>
-                </div>
-                <div className="flex items-center gap-2 text-slate-500">
-                  <PauseCircle className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Días Inactivos ($0): <strong className="text-slate-700 font-bold">{inactiveDaysCount} días</strong></span>
-                </div>
-                <div className="flex items-center gap-2 text-slate-700">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Prom. Jornada: <strong className="font-mono text-emerald-700 font-bold">${(avgHoursPerActiveDay * rate).toFixed(0)}/día</strong></span>
-                </div>
-              </div>
-
-              {/* SVG Chart */}
-              <div className="relative overflow-x-auto">
-                <div className="min-w-[620px]">
-                  <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto overflow-visible">
-                    {/* Gridlines */}
-                    {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => {
-                      const y = padding.top + graphHeight * (1 - pct);
-                      const hVal = effectiveTotalHours * pct;
-                      const vVal = totalValueGenerated * pct;
-                      return (
-                        <g key={i}>
-                          <line
-                            x1={padding.left}
-                            y1={y}
-                            x2={svgWidth - padding.right}
-                            y2={y}
-                            stroke="#f1f5f9"
-                            strokeWidth={1}
-                          />
-                          <text
-                            x={padding.left - 6}
-                            y={y + 3}
-                            textAnchor="end"
-                            fontSize="8"
-                            className="fill-slate-400 font-mono font-medium"
-                          >
-                            {hVal.toFixed(0)}h
-                          </text>
-                        </g>
-                      );
-                    })}
-
-                    {/* Shaded Area under cumulative line */}
-                    {areaPoints && (
-                      <polygon points={areaPoints} className="fill-orange-500/10" />
-                    )}
-
-                    {/* Daily activity vertical bars: rising from baseline on active days */}
-                    {curvePoints.map((pt, idx) => {
-                      const barW = Math.min(Math.max(graphWidth / (curvePoints.length * 1.6), 2), 7);
-                      if (pt.isActive) {
-                        return (
-                          <rect
-                            key={`bar-${idx}`}
-                            x={pt.x - barW / 2}
-                            y={padding.top + graphHeight - pt.barHeight}
-                            width={barW}
-                            height={pt.barHeight}
-                            rx={1}
-                            className="fill-emerald-500/70 hover:fill-emerald-400 transition-colors"
-                          />
-                        );
-                      } else {
-                        return (
-                          <line
-                            key={`idle-${idx}`}
-                            x1={pt.x}
-                            y1={padding.top + graphHeight}
-                            x2={pt.x}
-                            y2={padding.top + graphHeight - 2}
-                            stroke="#cbd5e1"
-                            strokeWidth={1}
-                          />
-                        );
-                      }
-                    })}
-
-                    {/* S-Curve cumulative line */}
-                    {polylinePoints && (
-                      <polyline
-                        fill="none"
-                        stroke="#ea580c"
-                        strokeWidth="2.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={polylinePoints}
-                      />
-                    )}
-
-                    {/* Interactive Data Points */}
-                    {curvePoints.map((pt, idx) => {
-                      const isHovered = hoveredPoint?.dateStr === pt.dateStr;
-
-                      return (
-                        <g
-                          key={`pt-${idx}`}
-                          className="cursor-pointer group"
-                          onMouseEnter={() => setHoveredPoint(pt)}
-                          onMouseLeave={() => setHoveredPoint(null)}
-                        >
-                          {/* Invisible hit target for smooth hovering */}
-                          <rect
-                            x={pt.x - 4}
-                            y={padding.top}
-                            width={8}
-                            height={graphHeight}
-                            fill="transparent"
-                          />
-
-                          {pt.isActive ? (
-                            <circle
-                              cx={pt.x}
-                              cy={pt.y}
-                              r={isHovered ? 5.5 : 3}
-                              className={`transition-all ${
-                                isHovered
-                                  ? 'fill-orange-600 stroke-white stroke-2'
-                                  : 'fill-white stroke-orange-600 stroke-2 hover:r-5'
-                              }`}
-                            />
-                          ) : isHovered ? (
-                            <circle
-                              cx={pt.x}
-                              cy={pt.y}
-                              r={3.5}
-                              className="fill-slate-400 stroke-white stroke-1"
-                            />
-                          ) : null}
-
-                          {/* Date label on axis */}
-                          {(idx === 0 || idx === curvePoints.length - 1 || idx % Math.max(Math.floor(curvePoints.length / 7), 1) === 0) && (
-                            <text
-                              x={pt.x}
-                              y={padding.top + graphHeight + 16}
-                              textAnchor="middle"
-                              fontSize="8"
-                              className="fill-slate-400 font-medium"
-                            >
-                              {pt.formattedDate}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </svg>
-                </div>
-
-                {/* Hover Tooltip Box */}
-                {hoveredPoint && (
-                  <div
-                    className="absolute z-20 pointer-events-none bg-slate-950 text-white rounded-xl p-3 text-xs shadow-2xl border border-slate-700 animate-in fade-in zoom-in-95 duration-100 min-w-[220px]"
-                    style={{
-                      left: Math.min(Math.max(hoveredPoint.x - 70, 10), svgWidth - 230),
-                      top: Math.max(hoveredPoint.y - 75, 0),
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-3 text-[11px] font-bold text-orange-400 border-b border-slate-800 pb-1 mb-1">
-                      <span>{hoveredPoint.fullDateStr}</span>
-                      {hoveredPoint.reportNumber && <span>Rep. N° {String(hoveredPoint.reportNumber).padStart(3, '0')}</span>}
-                    </div>
-
-                    {hoveredPoint.isActive ? (
-                      <div className="space-y-1">
-                        <div className="text-[11px] font-semibold text-slate-200 truncate">
-                          {hoveredPoint.projectName || 'Obra en ejecución'}
-                        </div>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-400">Jornada:</span>
-                          <strong className="text-emerald-400 font-mono">
-                            +{hoveredPoint.dayHours.toFixed(1)}h (+${hoveredPoint.dayValue.toLocaleString('es-EC', { minimumFractionDigits: 2 })})
-                          </strong>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/80">
-                          <span className="text-slate-400">Total Acumulado:</span>
-                          <strong className="text-white font-mono">
-                            {hoveredPoint.accumHours.toFixed(1)}h (${hoveredPoint.accumValue.toLocaleString('es-EC', { minimumFractionDigits: 2 })})
-                          </strong>
-                        </div>
-                        {hoveredPoint.notes && (
-                          <div className="text-[10px] text-slate-400 italic pt-0.5 truncate">
-                            {hoveredPoint.notes}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-1 text-slate-300">
-                        <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[11px]">
-                          <PauseCircle className="w-3.5 h-3.5" />
-                          <span>Sin Actividad (Día Inactivo)</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400">
-                          La máquina no registró horas trabajadas ni generó valor económico ($0.00).
-                        </p>
-                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/80 font-mono">
-                          <span className="text-slate-400">Acumulado retenido:</span>
-                          <strong className="text-white">{hoveredPoint.accumHours.toFixed(1)}h (${hoveredPoint.accumValue.toLocaleString('es-EC', { maximumFractionDigits: 0 })})</strong>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+            <MachineryAnalyticsTabs
+              machineName={machine.name}
+              machineCode={machine.code}
+              rate={rate}
+              dailyTimeline={dailyTimeline}
+              projectsSummary={projectsSummary}
+              onSelectProject={(projId) => {
+                setExpandedProjects((prev) => ({ ...prev, [projId]: true }));
+              }}
+            />
           )}
 
           {/* 3. RESUMEN DE HORAS POR OBRA (ACORDEÓN CON DESCARGA INDIVIDUAL DE PDF) */}
@@ -851,8 +604,11 @@ export function MachineryDetailModal({
                           </div>
                         </div>
 
-                        {/* Metrics, PDF Button, and Expand Indicator */}
+                        {/* Metrics, Sparkline, PDF Button, and Expand Indicator */}
                         <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 pl-13 sm:pl-0 flex-wrap">
+                          {/* Mini Sparkline preview */}
+                          <ProjectMiniSparkline logs={proj.logs} defaultRate={rate} />
+
                           {/* Horas en obra */}
                           <div className="text-left sm:text-right">
                             <span className="text-[10px] uppercase font-bold text-slate-400 block">Horas Obra</span>
@@ -884,11 +640,11 @@ export function MachineryDetailModal({
                             }}
                             disabled={exportingProjId === proj.id}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-300 hover:border-orange-300 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer disabled:opacity-50"
-                            title={`Descargar reporte PDF exclusivo de la obra ${proj.code}`}
+                            title={`Descargar reporte PDF de la obra ${proj.code}`}
                           >
                             <Download className="w-3.5 h-3.5 text-orange-600" />
-                            <span className="hidden sm:inline">
-                              {exportingProjId === proj.id ? 'Generando...' : 'PDF de esta Obra'}
+                            <span>
+                              {exportingProjId === proj.id ? 'Generando...' : 'Reporte Obra'}
                             </span>
                           </button>
 
@@ -909,24 +665,17 @@ export function MachineryDetailModal({
 
                       {/* DESGLOSE DE REPORTES DIARIOS DE ESTA OBRA (EXPANDABLE) */}
                       {isExpanded && (
-                        <div className="p-4 sm:p-5 bg-slate-50/50 border-t border-slate-100 space-y-3 animate-in fade-in duration-150">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-600 font-semibold px-1">
+                        <div className="p-4 sm:p-5 bg-slate-50/50 border-t border-slate-100 space-y-3.5 animate-in fade-in duration-150">
+                          {/* Visual Chart for this Obra */}
+                          <ProjectMachineryChart project={proj} defaultRate={rate} />
+
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-600 font-semibold px-1 pt-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span>Desglose por Reporte Diario en esta Obra ({proj.logs.length} jornadas):</span>
+                              <span>Detalle individual por Reporte Diario ({proj.logs.length} jornadas):</span>
                               <span className="text-[11px] text-slate-500 font-mono">
                                 Subtotal: {proj.totalHours.toFixed(1)}h • ${proj.totalValue.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
                               </span>
                             </div>
-
-                            <button
-                              type="button"
-                              onClick={() => handleDownloadProjectPdf(proj)}
-                              disabled={exportingProjId === proj.id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold shadow-xs transition-colors self-start sm:self-auto cursor-pointer disabled:opacity-50"
-                            >
-                              <Download className="w-3 h-3 text-orange-400" />
-                              <span>{exportingProjId === proj.id ? 'Generando PDF...' : `Descargar PDF de ${proj.code}`}</span>
-                            </button>
                           </div>
 
                           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
@@ -1022,18 +771,8 @@ export function MachineryDetailModal({
           <div className="flex items-center gap-2 self-end sm:self-auto">
             <button
               type="button"
-              onClick={handleDownloadGeneralPdf}
-              disabled={isExportingPdf}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5 text-orange-400" />
-              <span>{isExportingPdf ? 'Generando PDF...' : 'Descargar PDF General'}</span>
-            </button>
-
-            <button
-              type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-xs"
             >
               Cerrar
             </button>
