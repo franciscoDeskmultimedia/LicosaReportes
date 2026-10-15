@@ -451,6 +451,414 @@ function extractFullRdoData(
 }
 
 /**
+ * Detecta si el libro de Excel es un único RDO seccionado en múltiples pestañas
+ */
+function isMultiTabRdoWorkbook(sheetNames: string[]): boolean {
+  const lowers = sheetNames.map((s) => s.toLowerCase().trim());
+  const hasGeneral = lowers.some((s) => s.includes('general') || s.includes('0.') || s.includes('cabecera') || s.includes('datos'));
+  const hasClima = lowers.some((s) => s.includes('clima') || s.includes('ehs') || s.includes('1.'));
+  const hasEquipo = lowers.some((s) => (s.includes('equipo') || s.includes('2.')) && !s.includes('control de horometro'));
+  const hasPersonal = lowers.some((s) => s.includes('personal') || s.includes('3.'));
+  const hasRubros = lowers.some((s) => s.includes('rubro') || s.includes('4.'));
+
+  let score = 0;
+  if (hasGeneral) score++;
+  if (hasClima) score++;
+  if (hasEquipo) score++;
+  if (hasPersonal) score++;
+  if (hasRubros) score++;
+
+  return score >= 3;
+}
+
+/**
+ * Extrae todos los datos de un RDO distribuido en 11 pestañas especializadas
+ */
+function extractMultiTabRdoData(wb: XLSX.WorkBook): {
+  dateStr: string;
+  reportNumber: number;
+  dayAmount: number;
+  roadSection: string;
+  rubros: RubroExecutionPreview[];
+  machinery: Array<{ equipment: string; hours: number }>;
+  rdoDetails: RdoDetailedMetadata;
+} {
+  const findSheet = (pattern: string) => {
+    const p = pattern.toLowerCase();
+    const found = wb.SheetNames.find((name) => name.toLowerCase().includes(p));
+    return found ? wb.Sheets[found] : null;
+  };
+
+  // 1. Hoja General / Cabecera
+  const wsGeneral = findSheet('general') || findSheet('0.') || findSheet('datos') || wb.Sheets[wb.SheetNames[0]];
+  const genData = wsGeneral ? (XLSX.utils.sheet_to_json(wsGeneral, { header: 1 }) as any[][]) : [];
+
+  let dateStr = '';
+  let reportNumber = 0;
+  let dayAmount = 0;
+  let roadSection = '';
+
+  for (let r = 0; r < Math.min(15, genData.length); r++) {
+    const row = genData[r];
+    if (!row) continue;
+    for (let c = 0; c < row.length; c++) {
+      const cellVal = String(row[c] || '').toUpperCase().trim();
+      if (cellVal.includes('FECHA')) {
+        const val = row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2];
+        if (val) {
+          dateStr = excelDateToDate(val).toISOString().substring(0, 10);
+        }
+      }
+      if (cellVal.includes('REPORTE N') || cellVal.includes('REPORTE Nº')) {
+        const val = row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2];
+        const num = parseNum(val, 0);
+        if (num > 0) reportNumber = Math.round(num);
+      }
+      if (cellVal.includes('TRAMO') || cellVal.includes('SEGMENTO')) {
+        const val = row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2];
+        if (val) roadSection = String(val).trim();
+      }
+      if (cellVal.includes('MONTO TRABAJOS') || cellVal.includes('MONTO DE TRABAJOS')) {
+        const val = row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2];
+        const amt = parseNum(val, 0);
+        if (amt > 0) dayAmount = amt;
+      }
+    }
+  }
+
+  if (!dateStr || isNaN(Date.parse(dateStr))) {
+    dateStr = new Date().toISOString().substring(0, 10);
+  }
+
+  // 2. Hoja Clima y EHS
+  const wsClima = findSheet('clima') || findSheet('ehs') || findSheet('1.');
+  const climaData = wsClima ? (XLSX.utils.sheet_to_json(wsClima, { header: 1 }) as any[][]) : [];
+  let rainHoursDay = 0;
+  let rainHoursNight = 0;
+  let lostRainHoursDay = 0;
+  let lostRainHoursAccum = 0;
+  let safetyTalkMinutesDay = 5;
+  let safetyTalkMinutesAccum = 10;
+  let incidentsDay = 0;
+  let incidentsAccum = 0;
+  let accidentsDay = 0;
+  let accidentsAccum = 0;
+
+  for (const row of climaData) {
+    if (!row || !Array.isArray(row)) continue;
+    for (let c = 0; c < row.length; c++) {
+      const text = String(row[c] || '').toLowerCase().trim();
+      if (text.includes('horas de lluvia (dia)') || text.includes('lluvia (dia)')) {
+        rainHoursDay = parseNum(row[c + 1], 0);
+      } else if (text.includes('horas de lluvia (noche)') || text.includes('lluvia (noche)')) {
+        rainHoursNight = parseNum(row[c + 1], 0);
+      } else if (text.includes('horas perdidas por lluvia') && !text.includes('acum')) {
+        lostRainHoursDay = parseNum(row[c + 1], 0);
+      } else if (text.includes('horas perdidas acum')) {
+        lostRainHoursAccum = parseNum(row[c + 1], 0);
+      } else if (text.includes('charla diaria')) {
+        safetyTalkMinutesDay = parseNum(row[c + 1], 5);
+      } else if (text.includes('charla acum')) {
+        safetyTalkMinutesAccum = parseNum(row[c + 1], 10);
+      } else if (text.includes('incidentes')) {
+        const ratio = parseRatio(row[c + 1]);
+        incidentsDay = ratio.day;
+        incidentsAccum = ratio.accum;
+      } else if (text.includes('accidentes')) {
+        const ratio = parseRatio(row[c + 1]);
+        accidentsDay = ratio.day;
+        accidentsAccum = ratio.accum;
+      }
+    }
+  }
+
+  // 3. Hoja Equipos
+  const wsEquipo = findSheet('equipo') || findSheet('2.');
+  const equipoData = wsEquipo ? (XLSX.utils.sheet_to_json(wsEquipo, { header: 1 }) as any[][]) : [];
+  const machinery: Array<{ equipment: string; hours: number }> = [];
+
+  let eqHeader = -1;
+  let colEqDesc = 0;
+  let colEqQty = 2;
+  let colEqHrs = 3;
+
+  for (let i = 0; i < Math.min(10, equipoData.length); i++) {
+    const row = equipoData[i];
+    if (!row) continue;
+    const str = row.map((c) => String(c || '').toUpperCase());
+    if (str.some((c) => c.includes('DESCRIPCIÓN') || c.includes('EQUIPO'))) {
+      eqHeader = i;
+      str.forEach((c, idx) => {
+        if (c.includes('DESCRIPCIÓN') || c.includes('EQUIPO')) colEqDesc = idx;
+        if (c.includes('CANTIDAD') || c === 'CANT') colEqQty = idx;
+        if (c.includes('HORAS') || c.includes('HR')) colEqHrs = idx;
+      });
+      break;
+    }
+  }
+
+  if (eqHeader !== -1) {
+    for (let i = eqHeader + 1; i < equipoData.length; i++) {
+      const row = equipoData[i];
+      if (!row || !Array.isArray(row)) continue;
+      const eqName = String(row[colEqDesc] || '').trim();
+      const qty = parseNum(row[colEqQty], 0);
+      const hrs = parseNum(row[colEqHrs], 0);
+
+      if (isValidMachineryName(eqName) && (hrs > 0 || qty > 0)) {
+        machinery.push({ equipment: eqName, hours: hrs });
+      }
+    }
+  }
+
+  // 4. Hoja Personal
+  const wsPersonal = findSheet('personal') || findSheet('3.');
+  const persData = wsPersonal ? (XLSX.utils.sheet_to_json(wsPersonal, { header: 1 }) as any[][]) : [];
+  const personnel: Array<{ categoryRole: string; quantity: number; manHoursDay: number }> = [];
+
+  let persHeader = -1;
+  let colPersRole = 0;
+  let colPersQty = 1;
+  let colPersHrs = 2;
+
+  for (let i = 0; i < Math.min(10, persData.length); i++) {
+    const row = persData[i];
+    if (!row) continue;
+    const str = row.map((c) => String(c || '').toUpperCase());
+    if (str.some((c) => c.includes('CATEGOR') || c.includes('CARGO'))) {
+      persHeader = i;
+      str.forEach((c, idx) => {
+        if (c.includes('CATEGOR') || c.includes('CARGO')) colPersRole = idx;
+        if (c.includes('N°') || c.includes('CANT') || c === 'N') colPersQty = idx;
+        if (c.includes('H-HOMBRE') || c.includes('HORA')) colPersHrs = idx;
+      });
+      break;
+    }
+  }
+
+  if (persHeader !== -1) {
+    for (let i = persHeader + 1; i < persData.length; i++) {
+      const row = persData[i];
+      if (!row || !Array.isArray(row)) continue;
+      const role = String(row[colPersRole] || '').trim();
+      const qty = parseNum(row[colPersQty], 0);
+      const hrs = parseNum(row[colPersHrs], 0);
+
+      if (role.length > 2 && !role.toUpperCase().includes('CATEGORÍA') && (qty > 0 || hrs > 0)) {
+        personnel.push({ categoryRole: role, quantity: qty, manHoursDay: hrs });
+      }
+    }
+  }
+
+  // 5. Hoja Rubros del Día
+  const wsRubros = findSheet('rubro') || findSheet('4.');
+  const rubrosData = wsRubros ? (XLSX.utils.sheet_to_json(wsRubros, { header: 1 }) as any[][]) : [];
+  const rubros: RubroExecutionPreview[] = [];
+  let calculatedDayAmount = 0;
+
+  // Mapa de Precios Unitarios desde la pestaña CATÁLOGO RUBROS (para fallback automático si solo se ingresa cantidad)
+  const wsCat = findSheet('catálogo') || findSheet('catalogo') || findSheet('presupuesto');
+  const catData = wsCat ? (XLSX.utils.sheet_to_json(wsCat, { header: 1 }) as any[][]) : [];
+  const puCatalog = new Map<number, number>();
+  for (let i = 2; i < catData.length; i++) {
+    const row = catData[i];
+    if (!row || !row[0]) continue;
+    const rNum = parseInt(String(row[0]).trim(), 10);
+    const pu = parseNum(row[3], 0);
+    if (!isNaN(rNum) && pu > 0) {
+      puCatalog.set(rNum, pu);
+    }
+  }
+
+  let rubroHeader = -1;
+  let colRNum = 0;
+  let colRDesc = 1;
+  let colRUnit = 2;
+  let colRCantDia = 3;
+  let colRMontoDia = 5;
+
+  for (let i = 0; i < Math.min(10, rubrosData.length); i++) {
+    const row = rubrosData[i];
+    if (!row) continue;
+    const str = row.map((c) => String(c || '').toUpperCase());
+    if (str.some((c) => c.includes('RUBRO') || c.includes('DESCRIPCIÓN'))) {
+      rubroHeader = i;
+      str.forEach((c, idx) => {
+        if (c.includes('N°') || c.includes('RUBRO')) colRNum = idx;
+        if (c.includes('DESCRIPCIÓN')) colRDesc = idx;
+        if (c.includes('UNID')) colRUnit = idx;
+        if (c.includes('CANT. DÍA') || c.includes('CANT DIA') || c.includes('CANTIDAD DÍA')) colRCantDia = idx;
+        if (c.includes('MONTO DÍA') || c.includes('MONTO DIA')) colRMontoDia = idx;
+      });
+      break;
+    }
+  }
+
+  if (rubroHeader !== -1) {
+    for (let i = rubroHeader + 1; i < rubrosData.length; i++) {
+      const row = rubrosData[i];
+      if (!row || !Array.isArray(row)) continue;
+      const lineStr = row.map((c) => String(c || '').toUpperCase()).join(' ');
+      if (lineStr.includes('SUBTOTAL') || lineStr.includes('TOTAL')) break;
+
+      const num = parseInt(String(row[colRNum] || '').trim(), 10);
+      if (isNaN(num) || num <= 0) continue;
+
+      const desc = String(row[colRDesc] || '').trim();
+      const unit = String(row[colRUnit] || 'u').trim();
+      const qty = parseNum(row[colRCantDia], 0);
+      let amt = parseNum(row[colRMontoDia], 0);
+      let unitPrice = qty > 0 && amt > 0 ? amt / qty : (puCatalog.get(num) || 0);
+
+      // Si el usuario ingresó la cantidad del día pero el visor no calculó el monto dinámicamente:
+      if (amt === 0 && qty > 0 && unitPrice > 0) {
+        amt = Number((qty * unitPrice).toFixed(2));
+      }
+
+      if (desc.length > 1 && (qty > 0 || amt > 0)) {
+        rubros.push({
+          rubroNumber: num,
+          description: desc,
+          unit,
+          unitPrice,
+          quantity: qty,
+          amount: amt,
+        });
+        calculatedDayAmount += amt;
+      }
+    }
+  }
+
+  if (dayAmount === 0 && calculatedDayAmount > 0) {
+    dayAmount = calculatedDayAmount;
+  }
+
+  // 6. Actividades Hoy
+  const wsActHoy = findSheet('actividades hoy') || findSheet('6.');
+  const actHoyData = wsActHoy ? (XLSX.utils.sheet_to_json(wsActHoy, { header: 1 }) as any[][]) : [];
+  let actVial: string | null = null;
+  let actPavimento: string | null = null;
+  let actDrenaje: string | null = null;
+  let actPuentes: string | null = null;
+  let actTopografia: string | null = null;
+  let actSenalizacion: string | null = null;
+  let actAmbiental: string | null = null;
+
+  for (const row of actHoyData) {
+    if (!row || row.length < 2) continue;
+    const tag = String(row[0] || '').toUpperCase();
+    const val = String(row[1] || '').trim();
+    if (!val) continue;
+    if (tag.includes('VIAL')) actVial = val;
+    else if (tag.includes('PAVIMENTO')) actPavimento = val;
+    else if (tag.includes('DRENAJE')) actDrenaje = val;
+    else if (tag.includes('PUENTES') || tag.includes('ESTRUCTURAS')) actPuentes = val;
+    else if (tag.includes('TOPOGRAF')) actTopografia = val;
+    else if (tag.includes('SEÑALIZAC')) actSenalizacion = val;
+    else if (tag.includes('AMBIENTAL') || tag.includes('SEGURIDAD')) actAmbiental = val;
+  }
+
+  // 7. Actividades Mañana
+  const wsActManana = findSheet('actividades mañana') || findSheet('7.');
+  const actMananaData = wsActManana ? (XLSX.utils.sheet_to_json(wsActManana, { header: 1 }) as any[][]) : [];
+  const mananaParts: string[] = [];
+  for (const row of actMananaData) {
+    if (!row) continue;
+    const val = String(row[1] || row[0] || '').trim();
+    if (val && !val.toUpperCase().includes('PLANIFICADOS') && !val.toUpperCase().includes('DETALLE')) {
+      mananaParts.push(val);
+    }
+  }
+  const activitiesTomorrowVial = mananaParts.join('; ') || null;
+
+  // 8. Novedades y Riesgos
+  const wsNov = findSheet('novedades') || findSheet('8.');
+  const novData = wsNov ? (XLSX.utils.sheet_to_json(wsNov, { header: 1 }) as any[][]) : [];
+  const novParts: string[] = [];
+  for (const row of novData) {
+    if (!row) continue;
+    const val = String(row[1] || row[0] || '').trim();
+    if (val && !val.toUpperCase().includes('CONCEPTO') && !val.toUpperCase().includes('DETALLE')) {
+      novParts.push(val);
+    }
+  }
+  const noveltiesRisks = novParts.join('; ') || null;
+
+  // 9. Comentarios
+  const wsCom = findSheet('comentarios') || findSheet('9.');
+  const comData = wsCom ? (XLSX.utils.sheet_to_json(wsCom, { header: 1 }) as any[][]) : [];
+  let contractorComments: string | null = null;
+  let supervisorComments: string | null = null;
+  for (const row of comData) {
+    if (!row) continue;
+    const text0 = String(row[0] || '').toUpperCase();
+    const val = String(row[1] || '').trim();
+    if (text0.includes('CONTRATISTA')) contractorComments = val;
+    if (text0.includes('FISCALIZAC')) supervisorComments = val;
+  }
+
+  // 11. Firmas
+  const wsFirmas = findSheet('firmas') || findSheet('11.');
+  const firmasData = wsFirmas ? (XLSX.utils.sheet_to_json(wsFirmas, { header: 1 }) as any[][]) : [];
+  let preparedByName = 'Ing. María Fernanda Ligua';
+  let preparedByTitle = 'Ing. de Planillas';
+  let reviewedByName = 'Ing. Jerson López';
+  let reviewedByTitle = 'Residente de Obra';
+
+  for (const row of firmasData) {
+    if (!row) continue;
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').toUpperCase();
+      if (cell.includes('ELABORADO')) {
+        if (row[c + 1]) preparedByName = String(row[c + 1]).trim();
+      }
+      if (cell.includes('REVISADO')) {
+        if (row[c + 1]) reviewedByName = String(row[c + 1]).trim();
+      }
+    }
+  }
+
+  const rdoDetails: RdoDetailedMetadata = {
+    rainHoursDay,
+    rainHoursNight,
+    lostRainHoursDay,
+    lostRainHoursAccum,
+    safetyTalkMinutesDay,
+    safetyTalkMinutesAccum,
+    incidentsDay,
+    incidentsAccum,
+    accidentsDay,
+    accidentsAccum,
+    activitiesTodayVial: actVial,
+    activitiesTodayPavimento: actPavimento,
+    activitiesTodayDrenaje: actDrenaje,
+    activitiesTodayPuentes: actPuentes,
+    activitiesTodayTopografia: actTopografia,
+    activitiesTodaySenalizacion: actSenalizacion,
+    activitiesTodayAmbiental: actAmbiental,
+    activitiesTomorrowVial,
+    noveltiesRisks,
+    contractorComments,
+    supervisorComments,
+    preparedByName,
+    preparedByTitle,
+    reviewedByName,
+    reviewedByTitle,
+    personnelLogs: personnel,
+  };
+
+  return {
+    dateStr,
+    reportNumber,
+    dayAmount,
+    roadSection,
+    rubros,
+    machinery,
+    rdoDetails,
+  };
+}
+
+/**
  * Analiza un libro de Excel y lo compara contra la base de datos de un proyecto específico
  */
 export async function analyzeExcelBuffer(
@@ -462,85 +870,101 @@ export async function analyzeExcelBuffer(
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const sheetNames = wb.SheetNames;
 
+  // Detección si es un archivo de RDO Multi-Pestaña oficial (11 pestañas)
+  const isMultiTab = isMultiTabRdoWorkbook(sheetNames);
+
   // 1. Diagnóstico de pestañas disponibles
   const detectedSheets: ExcelAnalysisResult['detectedSheets'] = [];
   let registroDiarioSheetName: string | null = null;
   const rdoSheetNames: string[] = [];
   let horometroSheetName: string | null = null;
 
-  for (const name of sheetNames) {
-    const ws = wb.Sheets[name];
-    const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-    const count = data.length;
-    const lower = name.toLowerCase().trim();
-
-    const sampleText = JSON.stringify(data.slice(0, 15)).toUpperCase();
-    const isPhoto = lower.includes('fotograf') || lower.includes('foto');
-    const isInstruction = lower.includes('instruccion') || lower.includes('ayuda') || lower.includes('guia');
-    const isBitacora =
-      lower.includes('registro diario') ||
-      lower.includes('bitacora') ||
-      lower.includes('bitácora') ||
-      lower === 'registros';
-
-    const hasDatePattern =
-      /\d{1,2}[-_/.]\d{1,2}/.test(lower) ||
-      /\d{4}[-_/.]\d{1,2}/.test(lower) ||
-      /^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)/i.test(lower);
-
-    const hasRdoContent =
-      sampleText.includes('REPORTE DIARIO DE OBRA') ||
-      (sampleText.includes('REPORTE N') && sampleText.includes('MONTO DE TRABAJOS EJECUTADOS')) ||
-      (sampleText.includes('REPORTE DE CLIMA') && sampleText.includes('REPORTE DE EQUIPO'));
-
-    if (isInstruction) {
-      detectedSheets.push({
-        name,
-        type: 'OTHER',
-        rowCount: count,
-        description: `Guía e instrucciones de llenado (${count} filas)`,
-      });
-    } else if (isBitacora) {
-      registroDiarioSheetName = name;
-      detectedSheets.push({
-        name,
-        type: 'REGISTRO_DIARIO',
-        rowCount: count,
-        description: `Bitácora continua de rubros ejecutados (${count} filas)`,
-      });
-    } else if (!isPhoto && (lower.startsWith('rdo') || lower.includes('reporte') || hasDatePattern || hasRdoContent)) {
-      rdoSheetNames.push(name);
-      const isDateNamed = hasDatePattern && !lower.startsWith('rdo');
+  if (isMultiTab) {
+    for (const name of sheetNames) {
+      const ws = wb.Sheets[name];
+      const count = ws ? (XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][]).length : 0;
       detectedSheets.push({
         name,
         type: 'RDO',
         rowCount: count,
-        description: isDateNamed
-          ? `Plantilla oficial RDO detectada por fecha y estructura (${count} filas)`
-          : `Plantilla oficial de Reporte Diario de Obra (${count} filas)`,
+        description: `Sección oficial de RDO (${count} filas)`,
       });
-    } else if (lower.includes('horometro') || lower.includes('equipo')) {
-      horometroSheetName = name;
-      detectedSheets.push({
-        name,
-        type: 'HOROMETRO',
-        rowCount: count,
-        description: `Control y registro de horas/horómetro de maquinaria (${count} filas)`,
-      });
-    } else if (lower.includes('rubro')) {
-      detectedSheets.push({
-        name,
-        type: 'RUBROS',
-        rowCount: count,
-        description: `Catálogo contractual de rubros y especificaciones (${count} filas)`,
-      });
-    } else {
-      detectedSheets.push({
-        name,
-        type: 'OTHER',
-        rowCount: count,
-        description: `Pestaña auxiliar (${count} filas)`,
-      });
+    }
+  } else {
+    for (const name of sheetNames) {
+      const ws = wb.Sheets[name];
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+      const count = data.length;
+      const lower = name.toLowerCase().trim();
+
+      const sampleText = JSON.stringify(data.slice(0, 15)).toUpperCase();
+      const isPhoto = lower.includes('fotograf') || lower.includes('foto');
+      const isInstruction = lower.includes('instruccion') || lower.includes('ayuda') || lower.includes('guia');
+      const isBitacora =
+        lower.includes('registro diario') ||
+        lower.includes('bitacora') ||
+        lower.includes('bitácora') ||
+        lower === 'registros';
+
+      const hasDatePattern =
+        /\d{1,2}[-_/.]\d{1,2}/.test(lower) ||
+        /\d{4}[-_/.]\d{1,2}/.test(lower) ||
+        /^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)/i.test(lower);
+
+      const hasRdoContent =
+        sampleText.includes('REPORTE DIARIO DE OBRA') ||
+        (sampleText.includes('REPORTE N') && sampleText.includes('MONTO DE TRABAJOS EJECUTADOS')) ||
+        (sampleText.includes('REPORTE DE CLIMA') && sampleText.includes('REPORTE DE EQUIPO'));
+
+      if (isInstruction) {
+        detectedSheets.push({
+          name,
+          type: 'OTHER',
+          rowCount: count,
+          description: `Guía e instrucciones de llenado (${count} filas)`,
+        });
+      } else if (isBitacora) {
+        registroDiarioSheetName = name;
+        detectedSheets.push({
+          name,
+          type: 'REGISTRO_DIARIO',
+          rowCount: count,
+          description: `Bitácora continua de rubros ejecutados (${count} filas)`,
+        });
+      } else if (!isPhoto && (lower.startsWith('rdo') || lower.includes('reporte') || hasDatePattern || hasRdoContent)) {
+        rdoSheetNames.push(name);
+        const isDateNamed = hasDatePattern && !lower.startsWith('rdo');
+        detectedSheets.push({
+          name,
+          type: 'RDO',
+          rowCount: count,
+          description: isDateNamed
+            ? `Plantilla oficial RDO detectada por fecha y estructura (${count} filas)`
+            : `Plantilla oficial de Reporte Diario de Obra (${count} filas)`,
+        });
+      } else if (lower.includes('horometro') || lower.includes('equipo')) {
+        horometroSheetName = name;
+        detectedSheets.push({
+          name,
+          type: 'HOROMETRO',
+          rowCount: count,
+          description: `Control y registro de horas/horómetro de maquinaria (${count} filas)`,
+        });
+      } else if (lower.includes('rubro')) {
+        detectedSheets.push({
+          name,
+          type: 'RUBROS',
+          rowCount: count,
+          description: `Catálogo contractual de rubros y especificaciones (${count} filas)`,
+        });
+      } else {
+        detectedSheets.push({
+          name,
+          type: 'OTHER',
+          rowCount: count,
+          description: `Pestaña auxiliar (${count} filas)`,
+        });
+      }
     }
   }
 
@@ -563,7 +987,11 @@ export async function analyzeExcelBuffer(
 
   if (!project) {
     let sampleText = '';
-    if (rdoSheetNames.length > 0) {
+    if (isMultiTab) {
+      const ws0 = wb.Sheets[wb.SheetNames[0]];
+      const d0 = ws0 ? (XLSX.utils.sheet_to_json(ws0, { header: 1 }) as any[][]) : [];
+      sampleText = JSON.stringify(d0.slice(0, 10)).toUpperCase();
+    } else if (rdoSheetNames.length > 0) {
       const wsRdo = wb.Sheets[rdoSheetNames[0]];
       const rdoData = XLSX.utils.sheet_to_json(wsRdo, { header: 1 }) as any[][];
       sampleText = JSON.stringify(rdoData.slice(0, 10));
@@ -588,7 +1016,7 @@ export async function analyzeExcelBuffer(
     existingReportsByDate.set(dStr, rep);
   }
 
-  // 3. Extraer Horómetros por fecha si existe pestaña
+  // 3. Extraer Horómetros por fecha si existe pestaña (solo para archivos tradicionales)
   const horoByDate = new Map<string, Array<{ equipment: string; hours: number; inicio?: number; fin?: number }>>();
   if (horometroSheetName) {
     const wsHoro = wb.Sheets[horometroSheetName];
@@ -617,8 +1045,63 @@ export async function analyzeExcelBuffer(
   const items: ReportSyncItem[] = [];
   const itemsByDate = new Map<string, ReportSyncItem>();
 
+  // A0. Procesar RDO Multi-Pestaña Oficial (un solo reporte estructurado en 11 pestañas)
+  if (isMultiTab) {
+    const multiData = extractMultiTabRdoData(wb);
+    const dStr = multiData.dateStr;
+    const existingInDb = existingReportsByDate.get(dStr);
+
+    let status: 'NEW' | 'DISCREPANCY' | 'IDENTICAL' = 'NEW';
+    let statusLabel = 'Nuevo Reporte (RDO Oficial Multi-Pestaña)';
+    const discrepancies: DiscrepancyDetail[] = [];
+
+    let reportNumber = multiData.reportNumber;
+    if (existingInDb) {
+      if (reportNumber <= 0) reportNumber = existingInDb.reportNumber;
+      const diffTotal = Math.abs(existingInDb.totalExecutedDay - multiData.dayAmount);
+      if (diffTotal > 0.05) {
+        discrepancies.push({
+          field: 'totalExecutedDay',
+          label: 'Monto Total del Día',
+          dbValue: Number(existingInDb.totalExecutedDay.toFixed(2)),
+          excelValue: Number(multiData.dayAmount.toFixed(2)),
+          diff: Number((multiData.dayAmount - existingInDb.totalExecutedDay).toFixed(2)),
+        });
+      }
+      if (discrepancies.length > 0) {
+        status = 'DISCREPANCY';
+        statusLabel = `${discrepancies.length} Discrepancia(s)`;
+      } else {
+        status = 'IDENTICAL';
+        statusLabel = 'Sin Cambios (Idéntico)';
+      }
+    }
+
+    const syncItem: ReportSyncItem = {
+      id: existingInDb?.id,
+      date: dStr,
+      reportNumber,
+      status,
+      statusLabel,
+      sourceSheet: 'RDO Oficial (11 Pestañas)',
+      dayTotalAmount: multiData.dayAmount,
+      dbTotalAmount: existingInDb?.totalExecutedDay,
+      rubrosCount: multiData.rubros.length,
+      dbRubrosCount: existingInDb?.rubroExecutions?.length,
+      machineryCount: multiData.machinery.length,
+      discrepancies,
+      rubroExecutions: multiData.rubros,
+      machineryLogs: multiData.machinery,
+      rdoData: multiData.rdoDetails,
+      selected: status !== 'IDENTICAL',
+    };
+
+    items.push(syncItem);
+    itemsByDate.set(dStr, syncItem);
+  }
+
   // A. Procesar Registro Diario (si está presente y no se forzó solo RDO)
-  if (registroDiarioSheetName && syncMode !== 'rdo') {
+  if (!isMultiTab && registroDiarioSheetName && syncMode !== 'rdo') {
     const ws = wb.Sheets[registroDiarioSheetName];
     const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
 
@@ -774,8 +1257,8 @@ export async function analyzeExcelBuffer(
     }
   }
 
-  // B. Procesar Hojas RDO y Fusión Inteligente cuando ambos coinciden
-  if (rdoSheetNames.length > 0 && syncMode !== 'registro_diario') {
+  // B. Procesar Hojas RDO tradicionales y Fusión Inteligente cuando ambos coinciden
+  if (!isMultiTab && rdoSheetNames.length > 0 && syncMode !== 'registro_diario') {
     for (const rdoSheet of rdoSheetNames) {
       const ws = wb.Sheets[rdoSheet];
       const rdoResult = extractFullRdoData(ws, rdoSheet);

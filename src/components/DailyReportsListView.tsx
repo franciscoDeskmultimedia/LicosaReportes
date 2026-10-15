@@ -126,13 +126,13 @@ export function DailyReportsListView({
 
         <div className="flex items-center gap-2.5 flex-wrap">
           <a
-            href="/api/plantilla-maestra"
-            download="Plantilla_Maestra_Licosa.xlsx"
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-xs"
-            title="Descargar Plantilla Oficial Unificada (Proyecto, Rubros, Registro Diario, RDO y Horómetros)"
+            href={currentProject ? `/api/proyectos/${currentProject.id}/plantilla-rdo` : '/api/plantilla-reporte-diario'}
+            download={currentProject ? `Plantilla_RDO_${currentProject.code || 'Obra'}.xlsx` : 'Plantilla_Reporte_Diario_Licosa.xlsx'}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+            title={currentProject ? "Descargar Plantilla Oficial RDO estilizada con los rubros contractuales de este proyecto ya cargados" : "Descargar Plantilla Oficial RDO estilizada"}
           >
-            <Download className="w-4 h-4 text-orange-600" />
-            <span>Plantilla Oficial RDO</span>
+            <Download className="w-4 h-4 text-blue-600" />
+            <span>{currentProject ? 'Plantilla RDO (Mis Rubros)' : 'Plantilla RDO Oficial'}</span>
           </a>
 
           <button

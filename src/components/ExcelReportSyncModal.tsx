@@ -430,37 +430,51 @@ export function ExcelReportSyncModal({
               </label>
             </div>
 
-            {/* Descargar Plantilla Oficial RDO Estilizada */}
-            <div className="bg-gradient-to-r from-slate-50 via-blue-50/40 to-slate-50 border border-blue-200/90 rounded-2xl p-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-xs">
-              <div className="space-y-1">
+            {/* Descargar Plantilla Oficial RDO Estilizada con 11 pestañas */}
+            <div className="bg-gradient-to-r from-slate-50 via-blue-50/50 to-slate-50 border border-blue-200 rounded-2xl p-4.5 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs shadow-xs">
+              <div className="space-y-1.5 flex-1">
                 <div className="flex items-center gap-2">
                   <FileCheck className="w-5 h-5 text-blue-600 flex-shrink-0" />
                   <p className="font-bold text-slate-900 text-sm">
-                    Plantilla Oficial de Reporte Diario de Obra (RDO) Estilizada
+                    Plantilla Oficial RDO Estilizada (11 Pestañas Separadas)
                   </p>
                 </div>
                 <p className="text-slate-600 text-xs leading-relaxed">
-                  Formato idéntico al oficial de LICOSA con código de colores (amarillo editable, verde fórmulas automáticas), control de maquinaria, personal y rubros del día.
+                  Formato oficial de LICOSA estructurado en pestañas dedicadas (General, Clima-EHS, Equipos, Personal, Rubros, Actividades, Firmas). Celdas en amarillo suave para llenado rápido.
                 </p>
                 <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px]">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 font-semibold">
                     <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                    Amarillo: Datos a llenar
+                    Amarillo: Celdas editables
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Verde: Fórmulas de total y %
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-900 border border-blue-300 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                    Pestaña 4: Rubros del Proyecto ya cargados
                   </span>
                 </div>
               </div>
-              <a
-                href="/api/plantilla-reporte-diario"
-                download="Plantilla_Reporte_Diario_Licosa.xlsx"
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-sm shadow-blue-700/20 flex-shrink-0 cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>Descargar Plantilla RDO</span>
-              </a>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-shrink-0">
+                {selectedProjectId && (
+                  <a
+                    href={`/api/proyectos/${selectedProjectId}/plantilla-rdo`}
+                    download={`Plantilla_RDO_${projects.find((p) => p.id === selectedProjectId)?.code || 'Obra'}.xlsx`}
+                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl transition-all shadow-sm shadow-blue-700/20 cursor-pointer"
+                    title="Descarga la plantilla con los rubros contractuales de este proyecto ya listos en la pestaña 4"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>RDO con mis Rubros</span>
+                  </a>
+                )}
+                <a
+                  href="/api/plantilla-reporte-diario"
+                  download="Plantilla_Reporte_Diario_Licosa.xlsx"
+                  className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl transition-all border border-slate-300 cursor-pointer text-xs"
+                  title="Descargar plantilla genérica estándar de RDO"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Plantilla Modelo</span>
+                </a>
+              </div>
             </div>
           </div>
         )}
