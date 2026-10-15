@@ -82,10 +82,7 @@ export function PushNotificationManager() {
     setStatusMessage(null);
 
     try {
-      const vapidPublicKey =
-        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
-        'BFFVr5aGIMA45XNrBs_U8QUHz-uPEVvJ3_RhSXRXTH1S7jsQOkejzMl2quJeVjnfjiPgGRZE6XPqUOTKXIpQau8';
-
+      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!vapidPublicKey) {
         throw new Error('La clave pública VAPID no está configurada.');
       }
