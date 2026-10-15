@@ -1,8 +1,12 @@
 import webpush from 'web-push';
 import { prisma } from '@/lib/prisma';
 
-const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
+const vapidPublicKey =
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
+  'BFFVr5aGIMA45XNrBs_U8QUHz-uPEVvJ3_RhSXRXTH1S7jsQOkejzMl2quJeVjnfjiPgGRZE6XPqUOTKXIpQau8';
+const vapidPrivateKey =
+  process.env.VAPID_PRIVATE_KEY ||
+  'dgXHCo0Qi2N5SCaloQTRLhjzWgSRABo8yqxs6DkAFb0';
 const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:soporte@licosa.com';
 
 let isVapidConfigured = false;
