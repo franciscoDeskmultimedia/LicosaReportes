@@ -4,12 +4,16 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow Next.js internals, static assets, and favicon
+  // Allow Next.js internals, static assets, PWA manifest, service worker, and favicon
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
     pathname === '/favicon.ico' ||
-    pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp)$/)
+    pathname === '/manifest.json' ||
+    pathname === '/manifest.webmanifest' ||
+    pathname === '/sw.js' ||
+    pathname.startsWith('/icons') ||
+    pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|avif|webmanifest)$/)
   ) {
     return NextResponse.next();
   }
@@ -31,5 +35,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons).*)'],
 };
