@@ -15,10 +15,19 @@ jobs:
       - name: Set Backup Timestamp
         run: echo "TIMESTAMP=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_ENV
 
-      - name: Install PostgreSQL 16/17 Client
+      - name: Install PostgreSQL 18 Client Tools
         run: |
+          echo "Configurando repositorio oficial de PostgreSQL (PGDG)..."
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client
+          sudo apt-get install -y -qq curl ca-certificates postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18 || true
+
+          if command -v pg_dump >/dev/null 2>&1; then
+            echo "pg_dump disponible:"
+            pg_dump --version
+          fi
 
       - name: Dump Neon Database
         env:
@@ -30,17 +39,36 @@ jobs:
             exit 1
           fi
 
-          # Custom compressed format (-F c) is the industry standard for pg_restore
-          pg_dump "$DATABASE_URL" \
-            -F c \
-            -b \
-            -v \
-            --no-owner \
-            --no-acl \
-            -f "backup_licosa_${{ env.TIMESTAMP }}.dump"
+          FILENAME="backup_licosa_${{ env.TIMESTAMP }}.dump"
+
+          # Detectar versión instalada de pg_dump
+          PG_VERSION=$(pg_dump --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || echo "0")
+
+          if [ "$PG_VERSION" -ge 18 ]; then
+            echo "Ejecutando con pg_dump nativo v${PG_VERSION}..."
+            pg_dump "$DATABASE_URL" \
+              -F c \
+              -b \
+              -v \
+              --no-owner \
+              --no-acl \
+              -f "$FILENAME"
+          else
+            echo "pg_dump local es menor a 18 (o no disponible). Ejecutando mediante Docker postgres:18-alpine..."
+            docker run --rm \
+              -v "$PWD":/backup \
+              postgres:18-alpine \
+              pg_dump "$DATABASE_URL" \
+                -F c \
+                -b \
+                -v \
+                --no-owner \
+                --no-acl \
+                -f "/backup/$FILENAME"
+          fi
 
           echo "Respaldo completado con éxito:"
-          ls -lh "backup_licosa_${{ env.TIMESTAMP }}.dump"
+          ls -lh "$FILENAME"
 
       - name: Upload to Cloudflare R2
         env:
@@ -56,14 +84,15 @@ jobs:
           fi
 
           ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          FILENAME="backup_licosa_${{ env.TIMESTAMP }}.dump"
 
           echo "Subiendo archivo a Cloudflare R2 (bucket: $R2_BUCKET_NAME)..."
-          aws s3 cp "backup_licosa_${{ env.TIMESTAMP }}.dump" \
-            "s3://${R2_BUCKET_NAME}/backups/backup_licosa_${{ env.TIMESTAMP }}.dump" \
+          aws s3 cp "$FILENAME" \
+            "s3://${R2_BUCKET_NAME}/backups/$FILENAME" \
             --endpoint-url "$ENDPOINT"
 
           echo "Actualizando copia de acceso directo 'latest.dump'..."
-          aws s3 cp "backup_licosa_${{ env.TIMESTAMP }}.dump" \
+          aws s3 cp "$FILENAME" \
             "s3://${R2_BUCKET_NAME}/backups/latest.dump" \
             --endpoint-url "$ENDPOINT"
 
