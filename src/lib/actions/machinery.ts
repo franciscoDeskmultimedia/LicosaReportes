@@ -8,10 +8,19 @@ export async function getMachineryList() {
     orderBy: { code: 'asc' },
     include: {
       dailyLogs: {
-        take: 5,
         orderBy: { dailyReport: { date: 'desc' } },
         include: {
-          dailyReport: true,
+          dailyReport: {
+            include: {
+              project: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                },
+              },
+            },
+          },
         },
       },
     },

@@ -1,10 +1,28 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Truck, PlusCircle, Clock, AlertTriangle, CheckCircle2, Wrench, Search, X, Trash2, Pencil, DollarSign } from 'lucide-react';
+import {
+  Truck,
+  PlusCircle,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  Wrench,
+  Search,
+  X,
+  Trash2,
+  Pencil,
+  DollarSign,
+  ChevronRight,
+  Eye,
+  TrendingUp,
+  Download,
+  Building2,
+} from 'lucide-react';
 import { createMachinery, updateMachineryStatus, deleteMachinery } from '@/lib/actions/machinery';
+import { MachineryDetailModal } from '@/components/MachineryDetailModal';
 
-interface MachineryItem {
+export interface MachineryItem {
   id: string;
   code: string;
   name: string;
@@ -17,10 +35,18 @@ interface MachineryItem {
   dailyLogs: Array<{
     id: string;
     dayHours: number;
+    hourlyRate?: number | null;
     notes: string | null;
     dailyReport: {
+      id: string;
       reportNumber: number;
       date: Date | string;
+      roadSection?: string;
+      project?: {
+        id: string;
+        code: string;
+        name: string;
+      };
     };
   }>;
 }
@@ -34,6 +60,7 @@ export function MachineryView({
 }) {
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [selectedMachine, setSelectedMachine] = useState<MachineryItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MachineryItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -222,8 +249,19 @@ export function MachineryView({
                   </div>
                 </div>
 
-                <h2 className="text-base font-bold text-slate-900">{m.name}</h2>
-                <p className="text-xs text-slate-500">{m.category}</p>
+                <div
+                  onClick={() => setSelectedMachine(m)}
+                  className="cursor-pointer group"
+                >
+                  <h2 className="text-base font-bold text-slate-900 group-hover:text-orange-600 transition-colors flex items-center justify-between">
+                    <span>{m.name}</span>
+                    <span className="text-[11px] font-semibold text-orange-600 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <span>Ver detalle</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500">{m.category}</p>
+                </div>
 
                 {/* Metrics: Hours + Hourly Rate */}
                 <div className="grid grid-cols-2 gap-2 mt-4">
@@ -233,7 +271,11 @@ export function MachineryView({
                       <span className="text-[11px]">Horas Totales:</span>
                     </div>
                     <span className="font-mono font-bold text-slate-900">
-                      {m.totalHoursWorked.toFixed(1)} {m.unit}s
+                      {Math.max(
+                        m.totalHoursWorked || 0,
+                        m.dailyLogs.reduce((acc, l) => acc + (l.dayHours || 0), 0)
+                      ).toFixed(1)}{' '}
+                      {m.unit}s
                     </span>
                   </div>
 
@@ -249,21 +291,22 @@ export function MachineryView({
                 </div>
               </div>
 
-              {/* Recent report logs */}
-              <div className="pt-3 border-t border-slate-100 text-[11px] space-y-1.5">
-                <span className="font-bold text-slate-400 uppercase tracking-wider block text-[10px]">
-                  Últimos Reportes Diarios:
-                </span>
-                {m.dailyLogs.length > 0 ? (
-                  m.dailyLogs.slice(0, 2).map((log) => (
-                    <div key={log.id} className="flex justify-between text-slate-600">
-                      <span>Rep. N° {String(log.dailyReport.reportNumber).padStart(3, '0')}: {log.notes || 'Operando'}</span>
-                      <strong className="font-mono text-slate-800">{log.dayHours}h</strong>
-                    </div>
-                  ))
-                ) : (
-                  <span className="text-slate-400 italic">Sin actividad reciente registrada</span>
-                )}
+              {/* Action Button: Ver Horas por Obra y Desglose */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setSelectedMachine(m)}
+                  className="w-full py-2 px-3 bg-slate-50 hover:bg-orange-50 hover:text-orange-700 text-slate-700 border border-slate-200 hover:border-orange-200 rounded-xl text-xs font-bold transition-all flex items-center justify-between group cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <TrendingUp className="w-3.5 h-3.5 text-orange-600" />
+                    <span>Resumen por Obra</span>
+                  </span>
+                  <span className="flex items-center gap-1 text-[11px] font-mono text-slate-500 group-hover:text-orange-600">
+                    <span>{m.dailyLogs.length} reportes</span>
+                    <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </span>
+                </button>
               </div>
             </div>
           );
@@ -574,6 +617,19 @@ export function MachineryView({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Machinery Detail Modal */}
+      {selectedMachine && (
+        <MachineryDetailModal
+          machine={selectedMachine as any}
+          onClose={() => setSelectedMachine(null)}
+          isAdmin={isAdmin}
+          onStatusChange={(newStatus) => {
+            handleStatusChange(selectedMachine.id, newStatus);
+            setSelectedMachine((prev) => (prev ? { ...prev, status: newStatus } : null));
+          }}
+        />
       )}
     </div>
   );
