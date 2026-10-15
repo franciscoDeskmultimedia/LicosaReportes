@@ -450,29 +450,63 @@ export async function createDailyReport(data: {
 }
 
 export async function deleteDailyReport(id: string) {
-  const existing = await prisma.dailyReport.findUnique({
-    where: { id },
-  });
+  const { getCurrentUser } = await import('@/lib/auth');
+  const user = await getCurrentUser();
 
-  await prisma.dailyReport.delete({
-    where: { id },
-  });
-
-  if (existing) {
-    await recordAuditLog({
-      action: 'REPORTE_DIARIO_ELIMINADO',
-      entityType: 'DailyReport',
-      entityId: id,
-      description: `Eliminación de Reporte Diario N° ${existing.reportNumber} de la obra`,
-      projectId: existing.projectId,
-      metadata: {
-        reportNumber: existing.reportNumber,
-        roadSection: existing.roadSection,
-      },
-    });
+  if (!user || user.role !== 'ADMIN') {
+    throw new Error('No autorizado. Solo los administradores pueden eliminar reportes diarios.');
   }
 
+  const existing = await prisma.dailyReport.findUnique({
+    where: { id },
+    include: {
+      machineryLogs: true,
+      project: { select: { id: true, code: true, name: true } },
+    },
+  });
+
+  if (!existing) {
+    throw new Error('El reporte diario no existe o ya fue eliminado.');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Revertir horas acumuladas en maquinaria si correspondía
+    for (const m of existing.machineryLogs) {
+      if (m.machineryId && m.dayHours > 0) {
+        await tx.machinery.update({
+          where: { id: m.machineryId },
+          data: {
+            totalHoursWorked: {
+              decrement: m.dayHours,
+            },
+          },
+        }).catch(() => null);
+      }
+    }
+
+    // 2. Eliminar el reporte (DailyReportMachinery, DailyReportPersonnel, rubroExecutions se borran en cascada)
+    await tx.dailyReport.delete({
+      where: { id },
+    });
+  });
+
+  await recordAuditLog({
+    action: 'REPORTE_DIARIO_ELIMINADO',
+    entityType: 'DailyReport',
+    entityId: id,
+    description: `Eliminación de Reporte Diario N° ${existing.reportNumber} (Fecha: ${existing.date.toISOString().substring(0, 10)}) de la obra [${existing.project.code}] por administrador ${user.name}`,
+    projectId: existing.projectId,
+    metadata: {
+      reportNumber: existing.reportNumber,
+      roadSection: existing.roadSection,
+      deletedBy: user.name,
+      deletedByEmail: user.email,
+    },
+  });
+
   revalidatePath('/reportes');
+  revalidatePath(`/proyectos/${existing.projectId}`);
+  revalidatePath('/maquinaria');
   revalidatePath('/');
   return { success: true };
 }

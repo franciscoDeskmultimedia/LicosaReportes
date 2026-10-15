@@ -12,7 +12,7 @@ interface PageProps {
 }
 
 export default async function DailyReportDetailPage({ params, searchParams }: PageProps) {
-  await requireAuth();
+  const currentUser = await requireAuth();
   const { id } = await params;
   const { view } = await searchParams;
   const report = await getDailyReportById(id);
@@ -23,5 +23,11 @@ export default async function DailyReportDetailPage({ params, searchParams }: Pa
 
   const initialView = view === 'pdf' ? 'pdf' : 'html';
 
-  return <DailyReportUnifiedView report={report as any} initialView={initialView} />;
+  return (
+    <DailyReportUnifiedView
+      report={report as any}
+      initialView={initialView}
+      isAdmin={currentUser?.role === 'ADMIN'}
+    />
+  );
 }

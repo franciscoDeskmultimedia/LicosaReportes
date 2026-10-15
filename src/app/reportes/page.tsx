@@ -56,6 +56,7 @@ export default async function DailyReportsPage({ searchParams }: PageProps) {
       reports={reports}
       projects={projects}
       selectedProjectId={activeProjectId}
+      isAdmin={isAdmin}
     />
   );
 }
