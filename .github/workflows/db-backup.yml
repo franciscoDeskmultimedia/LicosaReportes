@@ -1,0 +1,70 @@
+name: Neon Database Backup to Cloudflare R2
+
+on:
+  schedule:
+    # Runs every day at 05:00 UTC (00:00 midnight Ecuador time, UTC-5)
+    - cron: '0 5 * * *'
+  workflow_dispatch: # Allows manual on-demand execution with a single click
+
+jobs:
+  backup:
+    name: Backup Neon PostgreSQL to Cloudflare R2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set Backup Timestamp
+        run: echo "TIMESTAMP=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_ENV
+
+      - name: Install PostgreSQL 16/17 Client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Dump Neon Database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Iniciando respaldo de base de datos Neon..."
+          if [ -z "$DATABASE_URL" ]; then
+            echo "ERROR: La variable de secreto DATABASE_URL no está configurada en GitHub Secrets."
+            exit 1
+          fi
+
+          # Custom compressed format (-F c) is the industry standard for pg_restore
+          pg_dump "$DATABASE_URL" \
+            -F c \
+            -b \
+            -v \
+            --no-owner \
+            --no-acl \
+            -f "backup_licosa_${{ env.TIMESTAMP }}.dump"
+
+          echo "Respaldo completado con éxito:"
+          ls -lh "backup_licosa_${{ env.TIMESTAMP }}.dump"
+
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          if [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ] || [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_BUCKET_NAME" ]; then
+            echo "ERROR: Faltan credenciales de Cloudflare R2 en los secretos de GitHub."
+            exit 1
+          fi
+
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          echo "Subiendo archivo a Cloudflare R2 (bucket: $R2_BUCKET_NAME)..."
+          aws s3 cp "backup_licosa_${{ env.TIMESTAMP }}.dump" \
+            "s3://${R2_BUCKET_NAME}/backups/backup_licosa_${{ env.TIMESTAMP }}.dump" \
+            --endpoint-url "$ENDPOINT"
+
+          echo "Actualizando copia de acceso directo 'latest.dump'..."
+          aws s3 cp "backup_licosa_${{ env.TIMESTAMP }}.dump" \
+            "s3://${R2_BUCKET_NAME}/backups/latest.dump" \
+            --endpoint-url "$ENDPOINT"
+
+          echo "¡Respaldo subido exitosamente a Cloudflare R2!"
