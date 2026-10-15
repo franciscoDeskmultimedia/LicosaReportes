@@ -56,7 +56,7 @@ export default async function DailyReportsPage({ searchParams }: PageProps) {
       reports={reports}
       projects={projects}
       selectedProjectId={activeProjectId}
-      isAdmin={isAdmin}
+      isAdmin={isAdmin || currentUser?.role === 'RESIDENTE_OBRA'}
     />
   );
 }

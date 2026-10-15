@@ -39,6 +39,7 @@ import {
   Pencil,
   X,
   Receipt,
+  Loader2,
 } from 'lucide-react';
 import { ProjectExpensesTab } from '@/components/ProjectExpensesTab';
 import { ProjectDynamicCurves } from '@/components/ProjectDynamicCurves';
@@ -55,6 +56,7 @@ import { OfficialReportDocument } from '@/components/OfficialReportDocument';
 import { DailyReportHtmlDashboard } from '@/components/DailyReportHtmlDashboard';
 import { removeWorkerFromProject } from '@/lib/actions/workers';
 import { removeContractorFromProject } from '@/lib/actions/contractors';
+import { deleteDailyReport } from '@/lib/actions/dailyReports';
 
 interface RubroAdjustment {
   id: string;
@@ -233,6 +235,29 @@ export function ProjectDetailView({
   const [editProjectOpen, setEditProjectOpen] = useState(false);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteReportTarget, setDeleteReportTarget] = useState<DailyReportData | null>(null);
+  const [deletingReport, setDeletingReport] = useState(false);
+  const [deleteReportError, setDeleteReportError] = useState<string | null>(null);
+
+  const canDeleteReports = currentUser?.role === 'ADMIN' || currentUser?.role === 'RESIDENTE_OBRA';
+
+  async function handleDeleteReportConfirm() {
+    if (!deleteReportTarget) return;
+    try {
+      setDeletingReport(true);
+      setDeleteReportError(null);
+      await deleteDailyReport(deleteReportTarget.id);
+      setDeleteReportTarget(null);
+      if (selectedReportId === deleteReportTarget.id) {
+        setSelectedReportId(null);
+      }
+      router.refresh();
+    } catch (err: any) {
+      console.error(err);
+      setDeleteReportError(err?.message || 'Error al eliminar el reporte');
+      setDeletingReport(false);
+    }
+  }
 
   // Latest Daily Report
   const allDailyReports = project.dailyReports || [];
@@ -1404,6 +1429,22 @@ export function ProjectDetailView({
                     <span className="hidden md:inline">Imprimir</span>
                   </Link>
 
+                  {/* Delete Report */}
+                  {canDeleteReports && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteReportError(null);
+                        setDeleteReportTarget(activeViewerReport as any);
+                      }}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors border border-rose-200 cursor-pointer"
+                      title="Eliminar este reporte diario"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span className="hidden md:inline">Eliminar</span>
+                    </button>
+                  )}
+
                   {/* Close Viewer */}
                   <button
                     onClick={() => setSelectedReportId(null)}
@@ -1593,6 +1634,22 @@ export function ProjectDetailView({
                           >
                             <Printer className="w-3.5 h-3.5" />
                           </Link>
+
+                          {/* Delete */}
+                          {canDeleteReports && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteReportError(null);
+                                setDeleteReportTarget(rep);
+                              }}
+                              className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 transition-colors border border-rose-200 cursor-pointer"
+                              title="Eliminar Reporte Diario"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1899,6 +1956,78 @@ export function ProjectDetailView({
           isOpen={editProjectOpen}
           onClose={() => setEditProjectOpen(false)}
         />
+      )}
+
+      {/* Delete Daily Report Modal */}
+      {deleteReportTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl text-slate-900 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteReportTarget(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black text-slate-900">
+                ¿Eliminar Reporte Diario N° {String(deleteReportTarget.reportNumber).padStart(3, '0')}?
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Fecha:{' '}
+                <strong className="text-slate-700">
+                  {new Date(deleteReportTarget.date).toLocaleDateString('es-EC', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </strong>
+              </p>
+              <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-800">
+                Esta acción eliminará el reporte diario, sus ejecuciones de rubros, partes de personal y maquinaria asociadas.
+              </div>
+              {deleteReportError && (
+                <p className="mt-2 text-xs font-semibold text-rose-600">{deleteReportError}</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={deletingReport}
+                onClick={() => setDeleteReportTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deletingReport}
+                onClick={handleDeleteReportConfirm}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-rose-600/20 transition-all cursor-pointer"
+              >
+                {deletingReport ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Confirmar Eliminación</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -453,8 +453,8 @@ export async function deleteDailyReport(id: string) {
   const { getCurrentUser } = await import('@/lib/auth');
   const user = await getCurrentUser();
 
-  if (!user || user.role !== 'ADMIN') {
-    throw new Error('No autorizado. Solo los administradores pueden eliminar reportes diarios.');
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'RESIDENTE_OBRA')) {
+    throw new Error('No autorizado. Solo los administradores o residentes pueden eliminar reportes diarios.');
   }
 
   const existing = await prisma.dailyReport.findUnique({
@@ -467,6 +467,10 @@ export async function deleteDailyReport(id: string) {
 
   if (!existing) {
     throw new Error('El reporte diario no existe o ya fue eliminado.');
+  }
+
+  if (user.role === 'RESIDENTE_OBRA' && user.assignedProjectIds && user.assignedProjectIds.length > 0 && !user.assignedProjectIds.includes(existing.projectId)) {
+    throw new Error('No autorizado. No tiene permisos para eliminar reportes de esta obra.');
   }
 
   await prisma.$transaction(async (tx) => {

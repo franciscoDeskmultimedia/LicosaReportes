@@ -27,7 +27,7 @@ export default async function DailyReportDetailPage({ params, searchParams }: Pa
     <DailyReportUnifiedView
       report={report as any}
       initialView={initialView}
-      isAdmin={currentUser?.role === 'ADMIN'}
+      isAdmin={currentUser?.role === 'ADMIN' || currentUser?.role === 'RESIDENTE_OBRA'}
     />
   );
 }
