@@ -267,143 +267,345 @@ function extractFullRdoData(
     dateStr = new Date().toISOString().substring(0, 10);
   }
 
-  // 1. Maquinaria y Personal en RDO (Detección Dinámica de Secciones)
+  // 1. Detección Dinámica de Secciones mediante Marcadores Semánticos (Sin filas hardcodeadas)
+  let rowClima = -1;
+  let rowRecursos = -1;
+  let rowRubros = -1;
+  let rowActHoy = -1;
+  let rowActManana = -1;
+  let rowNovedades = -1;
+  let rowComentarios = -1;
+  let rowFirmas = -1;
+
+  for (let i = 0; i < d.length; i++) {
+    const r = d[i];
+    if (!r || !Array.isArray(r)) continue;
+    const line = r.map((c) => String(c || '').toUpperCase().trim()).join(' ');
+
+    if (rowClima === -1 && (line.includes('REPORTE DE CLIMA') || line.includes('CLIMA Y EHS') || line.includes('1. REPORTE'))) {
+      rowClima = i;
+    }
+    if (rowRecursos === -1 && (line.includes('REPORTE DE EQUIPO') || line.includes('DESCRIPCIÓN DEL EQUIPO') || line.includes('2. REPORTE'))) {
+      rowRecursos = i;
+    }
+    if (rowRubros === -1 && (line.includes('RUBROS PRINCIPALES') || line.includes('4. RUBROS') || line.includes('N° RUBRO'))) {
+      rowRubros = i;
+    }
+    if (rowActHoy === -1 && (line.includes('ACTIVIDADES REALIZADAS') || line.includes('RESUMEN DE ACTIVIDADES') || line.includes('6. RESUMEN') || line.includes('5. RESUMEN'))) {
+      rowActHoy = i;
+    }
+    if (rowActManana === -1 && (line.includes('ACTIVIDADES A REALIZAR') || line.includes('ACTIVIDADES PROGRAMADAS') || line.includes('7. ACTIVIDADES') || line.includes('6. ACTIVIDADES'))) {
+      rowActManana = i;
+    }
+    if (rowNovedades === -1 && (line.includes('NOVEDADES') || line.includes('PARALIZACIONES') || line.includes('RIESGOS DE SEGURIDAD') || line.includes('8. NOVEDADES') || line.includes('7. NOVEDADES'))) {
+      rowNovedades = i;
+    }
+    if (rowComentarios === -1 && (line.includes('COMENTARIOS') || line.includes('9. COMENTARIOS') || line.includes('8. COMENTARIOS'))) {
+      rowComentarios = i;
+    }
+    if (rowFirmas === -1 && (line.includes('11. FIRMAS') || line.includes('10. FIRMAS') || line.includes('FIRMAS') || line.includes('ELABORADO POR'))) {
+      rowFirmas = i;
+    }
+  }
+
+  // --- SECCIÓN CLIMA & EHS DINÁMICA ---
+  let rainHoursDay = 0;
+  let rainHoursNight = 0;
+  let lostRainHoursDay = 0;
+  let lostRainHoursAccum = 0;
+  let safetyTalkMinutesDay = 5;
+  let safetyTalkMinutesAccum = 10;
+  let incidentsDay = 0;
+  let incidentsAccum = 0;
+  let accidentsDay = 0;
+  let accidentsAccum = 0;
+
+  const climaStart = rowClima !== -1 ? rowClima : 6;
+  const climaEnd = rowRecursos !== -1 ? rowRecursos : climaStart + 8;
+
+  for (let r = climaStart; r < Math.min(climaEnd, d.length); r++) {
+    const row = d[r];
+    if (!row || !Array.isArray(row)) continue;
+    for (let c = 0; c < row.length; c++) {
+      const txt = String(row[c] || '').toUpperCase().trim();
+      if (txt.includes('LLUVIA (DIA)') || txt.includes('LLUVIA (DÍA)')) {
+        rainHoursDay = parseNum(row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2], 0);
+      } else if (txt.includes('LLUVIA (NOCHE)')) {
+        rainHoursNight = parseNum(row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2], 0);
+      } else if (txt.includes('PERDIDAS POR LLUVIA') && !txt.includes('ACUM')) {
+        lostRainHoursDay = parseNum(row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2], 0);
+      } else if (txt.includes('PERDIDAS ACUM') || (txt.includes('PERDIDAS') && txt.includes('ACUM'))) {
+        lostRainHoursAccum = parseNum(row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2], 0);
+      } else if (txt.includes('CHARLA DIARIA')) {
+        safetyTalkMinutesDay = parseNum(row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2], 5);
+      } else if (txt.includes('CHARLA ACUM')) {
+        safetyTalkMinutesAccum = parseNum(row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2], 10);
+      } else if (txt.includes('INCIDENTES')) {
+        const ratio = parseRatio(row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2]);
+        incidentsDay = ratio.day;
+        incidentsAccum = ratio.accum;
+      } else if (txt.includes('ACCIDENTES')) {
+        const ratio = parseRatio(row[c + 1] !== undefined && row[c + 1] !== '' ? row[c + 1] : row[c + 2]);
+        accidentsDay = ratio.day;
+        accidentsAccum = ratio.accum;
+      }
+    }
+  }
+
+  // --- SECCIÓN EQUIPOS & PERSONAL EN PARALELO (Cajas separadas por columna) ---
   const machinery: Array<{ equipment: string; hours: number }> = [];
   const personnel: Array<{ categoryRole: string; quantity: number; manHoursDay: number }> = [];
 
   let eqHeaderRow = -1;
-  let colEq = 0;
-  let colEqH = 5;
+  let colEqDesc = 0;
   let colEqQty = 4;
-  let colPers = 6;
+  let colEqHrs = 5;
+
+  let colPersRole = 6;
   let colPersQty = 10;
-  let colPersH = 11;
+  let colPersHrs = 11;
+  let colDivider = 6; // Columna que divide Equipos (izquierda) de Personal (derecha)
 
-  for (let i = 0; i < Math.min(d.length, 30); i++) {
-    const r = d[i];
-    if (!r || !Array.isArray(r)) continue;
-    const strRow = r.map((c) => String(c || '').toUpperCase());
-    const hasReporte = strRow.some((c) => c && (c.includes('REPORTE DE EQUIPO') || c.includes('DESCRIPCIÓN DEL EQUIPO')));
-    if (hasReporte) {
-      eqHeaderRow = strRow.some((c) => c && c.includes('DESCRIPCIÓN')) ? i : i + 1;
-      break;
-    }
-  }
-
-  if (eqHeaderRow !== -1 && d[eqHeaderRow]) {
-    const hRow = d[eqHeaderRow].map((c) => String(c || '').toUpperCase());
-    hRow.forEach((c, idx) => {
-      if (!c) return;
-      if (c.includes('DESCRIPCIÓN') || c.includes('EQUIPO')) colEq = idx;
-      if (c.includes('HORAS DÍA') || (c.includes('HORA') && !c.includes('HOMBRE'))) colEqH = idx;
-      if (c.includes('CANTIDAD') && idx < 6) colEqQty = idx;
-      if (c.includes('CATEGORÍA') || c.includes('CARGO')) colPers = idx;
-      if (c.includes('N°') && idx >= 6) colPersQty = idx;
-      if (c.includes('H-HOMBRE') || c.includes('HOMBRE')) colPersH = idx;
-    });
-
-    for (let i = eqHeaderRow + 1; i < d.length; i++) {
-      const r = d[i];
-      if (!r || !Array.isArray(r)) continue;
-      const lineText = r.map((c) => String(c || '')).join(' ').toUpperCase();
-      if (lineText.includes('4. RUBROS') || lineText.includes('RUBROS PRINCIPALES') || lineText.includes('N° RUBRO')) {
-        break;
-      }
-
-      const eqName = r[colEq] ? String(r[colEq]).trim() : '';
-      const eqHours = typeof r[colEqH] === 'number' ? r[colEqH] : parseFloat(String(r[colEqH] || '').replace(/,/g, '')) || 0;
-      const eqQty = typeof r[colEqQty] === 'number' ? r[colEqQty] : parseFloat(String(r[colEqQty] || '').replace(/,/g, '')) || 0;
-
-      if (isValidMachineryName(eqName) && (eqHours > 0 || eqQty > 0)) {
-        machinery.push({ equipment: eqName, hours: eqHours });
-      }
-
-      const persName = r[colPers] ? String(r[colPers]).trim() : '';
-      const persQty = typeof r[colPersQty] === 'number' ? r[colPersQty] : parseInt(String(r[colPersQty] || '')) || 0;
-      const persH = typeof r[colPersH] === 'number' ? r[colPersH] : parseFloat(String(r[colPersH] || '')) || 0;
-      if (persName && persQty > 0 && !persName.toUpperCase().includes('CATEGORÍA') && !persName.toUpperCase().includes('CARGO')) {
-        personnel.push({ categoryRole: persName, quantity: persQty, manHoursDay: persH });
-      }
-    }
-  }
-
-  // 2. Rubros en RDO (Detección Dinámica de la Sección 4)
-  const rubros: RubroExecutionPreview[] = [];
-  let rubroHeaderRow = -1;
-  for (let i = 0; i < d.length; i++) {
-    const line = (d[i] || []).map((c) => String(c || '').toUpperCase()).join(' ');
-    if (line.includes('RUBROS PRINCIPALES') || line.includes('4. RUBROS')) {
-      rubroHeaderRow = i + 1;
-      break;
-    }
-  }
-
-  if (rubroHeaderRow !== -1) {
-    for (let i = rubroHeaderRow + 1; i < d.length; i++) {
-      const r = d[i];
-      if (!r || !Array.isArray(r)) continue;
-      const line = r.map((c) => String(c || '').toUpperCase()).join(' ');
-      if (line.includes('5. ACTIVIDADES') || line.includes('ACTIVIDADES REALIZADAS') || line.includes('OBSERVACIONES')) {
-        break;
-      }
-
-      const num = typeof r[0] === 'number' ? r[0] : parseInt(String(r[0] || '').trim(), 10);
-      if (isNaN(num) || num <= 0) continue;
-      const desc = String(r[1] || '').trim();
-      const unit = String(r[5] || 'u').trim();
-      const qty = typeof r[6] === 'number' ? r[6] : parseFloat(String(r[6] || '').replace(/,/g, '')) || 0;
-      const amt = typeof r[8] === 'number' ? r[8] : parseFloat(String(r[8] || '').replace(/,/g, '')) || 0;
-      const unitPrice = qty > 0 ? amt / qty : 0;
-
-      if (desc.length > 2 && (qty > 0 || amt > 0)) {
-        rubros.push({
-          rubroNumber: num,
-          description: desc,
-          unit,
-          unitPrice,
-          quantity: qty,
-          amount: amt,
+  if (rowRecursos !== -1) {
+    for (let r = rowRecursos; r < Math.min(rowRecursos + 4, d.length); r++) {
+      const row = d[r];
+      if (!row) continue;
+      const strRow = row.map((c) => String(c || '').toUpperCase());
+      if (strRow.some((c) => c.includes('DESCRIPCIÓN') || c.includes('EQUIPO'))) {
+        eqHeaderRow = r;
+        strRow.forEach((c, idx) => {
+          if (!c) return;
+          if (c.includes('CATEGORÍA') || c.includes('CARGO') || c.includes('PERSONAL')) {
+            colDivider = idx;
+            colPersRole = idx;
+          }
         });
+        strRow.forEach((c, idx) => {
+          if (!c) return;
+          if (idx < colDivider) {
+            if (c.includes('DESCRIPCIÓN') || c.includes('EQUIPO')) colEqDesc = idx;
+            if (c.includes('CANTIDAD') || c === 'CANT') colEqQty = idx;
+            if (c.includes('HORAS') || c.includes('HORA')) colEqHrs = idx;
+          } else {
+            if (c.includes('CATEGORÍA') || c.includes('CARGO')) colPersRole = idx;
+            if (c.includes('N°') || c.includes('CANT') || c === 'N') colPersQty = idx;
+            if (c.includes('H-HOMBRE') || c.includes('HOMBRE') || c.includes('HORA')) colPersHrs = idx;
+          }
+        });
+        break;
       }
     }
   }
 
-  // Clima & EHS
-  const rainHoursDay = parseNum(d[8]?.[3]);
-  const rainHoursNight = parseNum(d[9]?.[3]);
-  const lostRainHoursDay = parseNum(d[10]?.[3]);
-  const lostRainHoursAccum = parseNum(d[11]?.[3]);
+  const recStart = eqHeaderRow !== -1 ? eqHeaderRow + 1 : (rowRecursos !== -1 ? rowRecursos + 2 : 13);
+  const recEnd = rowRubros !== -1 ? rowRubros : recStart + 25;
 
-  const safetyTalkMinutesDay = parseNum(d[8]?.[9], 5);
-  const safetyTalkMinutesAccum = parseNum(d[9]?.[9], 105);
-  const incidents = parseRatio(d[10]?.[9]);
-  const accidents = parseRatio(d[11]?.[9]);
+  for (let r = recStart; r < Math.min(recEnd, d.length); r++) {
+    const row = d[r];
+    if (!row || !Array.isArray(row)) continue;
+    const lineText = row.map((c) => String(c || '')).join(' ').toUpperCase();
+    if (lineText.includes('4. RUBROS') || lineText.includes('RUBROS PRINCIPALES') || lineText.includes('N° RUBRO')) {
+      break;
+    }
 
-  // Actividades
-  const actTodayVial = d[54]?.[2] || d[54]?.[1] || null;
-  const actTodayPavimento = d[55]?.[2] || d[55]?.[1] || null;
-  const actTodayDrenaje = d[56]?.[2] || d[56]?.[1] || null;
-  const actTodayPuentes = d[57]?.[2] || d[57]?.[1] || null;
-  const actTodayTopografia = d[58]?.[2] || d[58]?.[1] || null;
-  const actTodaySenalizacion = d[59]?.[2] || d[59]?.[1] || null;
-  const actTodayAmbiental = d[60]?.[2] || d[60]?.[1] || null;
+    // CAJA IZQUIERDA: EQUIPOS
+    const eqName = String(row[colEqDesc] || '').trim();
+    const eqHrs = parseNum(row[colEqHrs], 0);
+    const eqQty = parseNum(row[colEqQty], 0);
 
-  const actTomVial = d[63]?.[2] || d[63]?.[1] || null;
-  const actTomPavimento = d[64]?.[2] || d[64]?.[1] || null;
-  const actTomDrenaje = d[65]?.[2] || d[65]?.[1] || null;
-  const actTomPuentes = d[66]?.[2] || d[66]?.[1] || null;
-  const actTomTopografia = d[67]?.[2] || d[67]?.[1] || null;
-  const actTomSenalizacion = d[68]?.[2] || d[68]?.[1] || null;
-  const actTomAmbiental = d[69]?.[2] || d[69]?.[1] || null;
+    if (isValidMachineryName(eqName) && (eqHrs > 0 || eqQty > 0)) {
+      machinery.push({ equipment: eqName, hours: eqHrs });
+    }
 
-  const noveltiesRisks = d[72]?.[0] || d[73]?.[0] || null;
-  const contractorComments = d[77]?.[0] || d[78]?.[0] || null;
-  const supervisorComments = d[77]?.[6] || d[78]?.[6] || null;
+    // CAJA DERECHA: PERSONAL
+    const persName = String(row[colPersRole] || '').trim();
+    const persQty = parseNum(row[colPersQty], 0);
+    const persHrs = parseNum(row[colPersHrs], 0);
 
-  const preparedByName = String(d[90]?.[0] || 'Ing. María Fernanda Ligua');
-  const preparedByTitle = String(d[91]?.[0] || 'Ing. de Planillas');
-  const reviewedByName = String(d[90]?.[6] || 'Ing. Jerson López');
-  const reviewedByTitle = String(d[91]?.[6] || 'Residente de Obra');
+    if (
+      persName.length > 2 &&
+      !persName.toUpperCase().includes('CATEGORÍA') &&
+      !persName.toUpperCase().includes('CARGO') &&
+      !persName.toUpperCase().includes('PERSONAL') &&
+      (persQty > 0 || persHrs > 0)
+    ) {
+      personnel.push({ categoryRole: persName, quantity: persQty, manHoursDay: persHrs });
+    }
+  }
+
+  // --- SECCIÓN RUBROS PRINCIPALES DEL DÍA (Dinámica sin límite de filas) ---
+  const rubros: RubroExecutionPreview[] = [];
+  let calculatedDayAmount = 0;
+
+  let rubroHeaderRow = -1;
+  let colRNum = 0;
+  let colRDesc = 1;
+  let colRUnit = 5;
+  let colRCantDia = 6;
+  let colRMontoDia = 8;
+
+  if (rowRubros !== -1) {
+    for (let r = rowRubros; r < Math.min(rowRubros + 4, d.length); r++) {
+      const row = d[r];
+      if (!row) continue;
+      const strRow = row.map((c) => String(c || '').toUpperCase());
+      if (strRow.some((c) => c.includes('N°') || c.includes('RUBRO') || c.includes('DESCRIPCIÓN'))) {
+        rubroHeaderRow = r;
+        strRow.forEach((c, idx) => {
+          if (!c) return;
+          if (c.includes('N°') || c.includes('RUBRO')) colRNum = idx;
+          if (c.includes('DESCRIPCIÓN')) colRDesc = idx;
+          if (c.includes('UNID')) colRUnit = idx;
+          if (c.includes('CANT. DÍA') || c.includes('CANT DIA') || c.includes('CANTIDAD DÍA')) colRCantDia = idx;
+          if (c.includes('MONTO DÍA') || c.includes('MONTO DIA')) colRMontoDia = idx;
+        });
+        break;
+      }
+    }
+  }
+
+  const rubroStart = rubroHeaderRow !== -1 ? rubroHeaderRow + 1 : (rowRubros !== -1 ? rowRubros + 2 : 25);
+  for (let r = rubroStart; r < d.length; r++) {
+    const row = d[r];
+    if (!row || !Array.isArray(row)) continue;
+    const lineText = row.map((c) => String(c || '')).join(' ').toUpperCase();
+
+    // Detener la lectura cuando termine la tabla de rubros
+    if (
+      lineText.includes('SUBTOTAL') ||
+      lineText.includes('TOTAL RUBROS') ||
+      lineText.includes('5. ACTIVIDADES') ||
+      lineText.includes('6. RESUMEN') ||
+      lineText.includes('5. AVANCE ECONÓMICO') ||
+      lineText.includes('ACTIVIDADES REALIZADAS')
+    ) {
+      break;
+    }
+
+    const num = parseInt(String(row[colRNum] || '').trim(), 10);
+    if (isNaN(num) || num <= 0) continue;
+
+    const desc = String(row[colRDesc] || '').trim();
+    const unit = String(row[colRUnit] || 'u').trim();
+    const qty = parseNum(row[colRCantDia], 0);
+    const amt = parseNum(row[colRMontoDia], 0);
+    const unitPrice = qty > 0 && amt > 0 ? amt / qty : 0;
+
+    if (desc.length > 1 && (qty > 0 || amt > 0)) {
+      rubros.push({
+        rubroNumber: num,
+        description: desc,
+        unit,
+        unitPrice,
+        quantity: qty,
+        amount: amt,
+      });
+      calculatedDayAmount += amt;
+    }
+  }
+
+  if (dayAmount === 0 && calculatedDayAmount > 0) {
+    dayAmount = calculatedDayAmount;
+  }
+
+  // --- SECCIÓN ACTIVIDADES REALIZADAS HOY (Búsqueda Semántica) ---
+  let activitiesTodayVial: string | null = null;
+  let activitiesTodayPavimento: string | null = null;
+  let activitiesTodayDrenaje: string | null = null;
+  let activitiesTodayPuentes: string | null = null;
+  let activitiesTodayTopografia: string | null = null;
+  let activitiesTodaySenalizacion: string | null = null;
+  let activitiesTodayAmbiental: string | null = null;
+
+  if (rowActHoy !== -1) {
+    const actEnd = rowActManana !== -1 ? rowActManana : (rowNovedades !== -1 ? rowNovedades : rowActHoy + 12);
+    for (let r = rowActHoy + 1; r < Math.min(actEnd, d.length); r++) {
+      const row = d[r];
+      if (!row || !Array.isArray(row)) continue;
+      const tag = String(row[0] || row[1] || '').toUpperCase();
+      const val = String(row[2] || row[3] || row[1] || '').trim();
+      if (!val || val.length < 2) continue;
+
+      if (tag.includes('VIAL')) activitiesTodayVial = val;
+      else if (tag.includes('PAVIMENTO')) activitiesTodayPavimento = val;
+      else if (tag.includes('DRENAJE')) activitiesTodayDrenaje = val;
+      else if (tag.includes('PUENTES') || tag.includes('ESTRUCTURAS')) activitiesTodayPuentes = val;
+      else if (tag.includes('TOPOGRAF')) activitiesTodayTopografia = val;
+      else if (tag.includes('SEÑALIZAC')) activitiesTodaySenalizacion = val;
+      else if (tag.includes('AMBIENTAL') || tag.includes('SEGURIDAD')) activitiesTodayAmbiental = val;
+    }
+  }
+
+  // --- SECCIÓN ACTIVIDADES MAÑANA (Búsqueda Semántica) ---
+  let activitiesTomorrowVial: string | null = null;
+  if (rowActManana !== -1) {
+    const mananaEnd = rowNovedades !== -1 ? rowNovedades : (rowComentarios !== -1 ? rowComentarios : rowActManana + 8);
+    const mananaParts: string[] = [];
+    for (let r = rowActManana + 1; r < Math.min(mananaEnd, d.length); r++) {
+      const row = d[r];
+      if (!row) continue;
+      const txt = row.map((c) => String(c || '').trim()).filter((c) => c.length > 2 && !c.toUpperCase().includes('ACTIVIDADES') && !c.toUpperCase().includes('SECTOR') && !c.toUpperCase().includes('DETALLE')).join(' ');
+      if (txt) mananaParts.push(txt);
+    }
+    activitiesTomorrowVial = mananaParts.join('; ') || null;
+  }
+
+  // --- SECCIÓN NOVEDADES Y RIESGOS ---
+  let noveltiesRisks: string | null = null;
+  if (rowNovedades !== -1) {
+    const novEnd = rowComentarios !== -1 ? rowComentarios : (rowFirmas !== -1 ? rowFirmas : rowNovedades + 6);
+    const novParts: string[] = [];
+    for (let r = rowNovedades + 1; r < Math.min(novEnd, d.length); r++) {
+      const row = d[r];
+      if (!row) continue;
+      const txt = row.map((c) => String(c || '').trim()).filter((c) => c.length > 2 && !c.toUpperCase().includes('NOVEDADES') && !c.toUpperCase().includes('RIESGOS') && !c.toUpperCase().includes('PARALIZACIONES')).join(' ');
+      if (txt) novParts.push(txt);
+    }
+    noveltiesRisks = novParts.join('; ') || null;
+  }
+
+  // --- SECCIÓN COMENTARIOS ---
+  let contractorComments: string | null = null;
+  let supervisorComments: string | null = null;
+  if (rowComentarios !== -1) {
+    const comEnd = rowFirmas !== -1 ? rowFirmas : rowComentarios + 8;
+    for (let r = rowComentarios; r < Math.min(comEnd, d.length); r++) {
+      const row = d[r];
+      if (!row) continue;
+      for (let c = 0; c < row.length; c++) {
+        const txt = String(row[c] || '').toUpperCase();
+        if (txt.includes('CONTRATISTA')) {
+          contractorComments = String(row[c + 1] || row[c + 2] || d[r + 1]?.[c] || '').trim() || null;
+        }
+        if (txt.includes('FISCALIZAC')) {
+          supervisorComments = String(row[c + 1] || row[c + 2] || d[r + 1]?.[c] || '').trim() || null;
+        }
+      }
+    }
+  }
+
+  // --- SECCIÓN FIRMAS DINÁMICA ---
+  let preparedByName = 'Ing. María Fernanda Ligua';
+  let preparedByTitle = 'Ing. de Planillas';
+  let reviewedByName = 'Ing. Jerson López';
+  let reviewedByTitle = 'Residente de Obra';
+
+  const firmasScanStart = rowFirmas !== -1 ? rowFirmas : Math.max(0, d.length - 20);
+  for (let r = firmasScanStart; r < d.length; r++) {
+    const row = d[r];
+    if (!row) continue;
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').toUpperCase().trim();
+      if (cell.includes('ELABORADO')) {
+        const val = row[c + 1] || d[r + 1]?.[c] || d[r - 1]?.[c];
+        if (val && String(val).length > 3) preparedByName = String(val).trim();
+      }
+      if (cell.includes('REVISADO')) {
+        const val = row[c + 1] || d[r + 1]?.[c] || d[r - 1]?.[c];
+        if (val && String(val).length > 3) reviewedByName = String(val).trim();
+      }
+    }
+  }
 
   const rdoDetails: RdoDetailedMetadata = {
     rainHoursDay,
@@ -412,27 +614,21 @@ function extractFullRdoData(
     lostRainHoursAccum,
     safetyTalkMinutesDay,
     safetyTalkMinutesAccum,
-    incidentsDay: incidents.day,
-    incidentsAccum: incidents.accum,
-    accidentsDay: accidents.day,
-    accidentsAccum: accidents.accum,
-    activitiesTodayVial: actTodayVial ? String(actTodayVial).trim() : null,
-    activitiesTodayPavimento: actTodayPavimento ? String(actTodayPavimento).trim() : null,
-    activitiesTodayDrenaje: actTodayDrenaje ? String(actTodayDrenaje).trim() : null,
-    activitiesTodayPuentes: actTodayPuentes ? String(actTodayPuentes).trim() : null,
-    activitiesTodayTopografia: actTodayTopografia ? String(actTodayTopografia).trim() : null,
-    activitiesTodaySenalizacion: actTodaySenalizacion ? String(actTodaySenalizacion).trim() : null,
-    activitiesTodayAmbiental: actTodayAmbiental ? String(actTodayAmbiental).trim() : null,
-    activitiesTomorrowVial: actTomVial ? String(actTomVial).trim() : null,
-    activitiesTomorrowPavimento: actTomPavimento ? String(actTomPavimento).trim() : null,
-    activitiesTomorrowDrenaje: actTomDrenaje ? String(actTomDrenaje).trim() : null,
-    activitiesTomorrowPuentes: actTomPuentes ? String(actTomPuentes).trim() : null,
-    activitiesTomorrowTopografia: actTomTopografia ? String(actTomTopografia).trim() : null,
-    activitiesTomorrowSenalizacion: actTomSenalizacion ? String(actTomSenalizacion).trim() : null,
-    activitiesTomorrowAmbiental: actTomAmbiental ? String(actTomAmbiental).trim() : null,
-    noveltiesRisks: noveltiesRisks ? String(noveltiesRisks).trim() : null,
-    contractorComments: contractorComments ? String(contractorComments).trim() : null,
-    supervisorComments: supervisorComments ? String(supervisorComments).trim() : null,
+    incidentsDay,
+    incidentsAccum,
+    accidentsDay,
+    accidentsAccum,
+    activitiesTodayVial,
+    activitiesTodayPavimento,
+    activitiesTodayDrenaje,
+    activitiesTodayPuentes,
+    activitiesTodayTopografia,
+    activitiesTodaySenalizacion,
+    activitiesTodayAmbiental,
+    activitiesTomorrowVial,
+    noveltiesRisks,
+    contractorComments,
+    supervisorComments,
     preparedByName,
     preparedByTitle,
     reviewedByName,
@@ -909,7 +1105,8 @@ export async function analyzeExcelBuffer(
       const hasDatePattern =
         /\d{1,2}[-_/.]\d{1,2}/.test(lower) ||
         /\d{4}[-_/.]\d{1,2}/.test(lower) ||
-        /^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)/i.test(lower);
+        /(lun|mar|mie|mié|jue|vie|sab|sáb|dom|\d{1,2})[\s\-_.]*(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)/i.test(lower) ||
+        /(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[_\s-]*\d{1,2}/i.test(lower);
 
       const hasRdoContent =
         sampleText.includes('REPORTE DIARIO DE OBRA') ||
