@@ -107,6 +107,125 @@ export function parseProjectWorkbook(wb: XLSX.WorkBook, fileName: string): Parse
         }
       }
     }
+  } else {
+    // Si no existe la hoja PROYECTO, extraer metadatos de las cabeceras de hojas RDO priorizando RDO oficial
+    const rdoSheets = sheetNames
+      .filter((s) => {
+        const l = s.toLowerCase();
+        return (
+          l.includes('rdo') ||
+          l.includes('rep') ||
+          l.includes('sep') ||
+          l.includes('oct') ||
+          l.includes('nov') ||
+          l.includes('dic') ||
+          l.includes('ene') ||
+          l.includes('feb') ||
+          l.includes('mar') ||
+          l.includes('abr') ||
+          l.includes('may') ||
+          l.includes('jun') ||
+          l.includes('jul') ||
+          l.includes('ago')
+        );
+      })
+      .sort((a, b) => {
+        const aScore = a.toUpperCase().startsWith('RDO') ? 0 : a.toUpperCase().startsWith('REP') ? 1 : 2;
+        const bScore = b.toUpperCase().startsWith('RDO') ? 0 : b.toUpperCase().startsWith('REP') ? 1 : 2;
+        return aScore - bScore;
+      });
+
+    const sheetsToScan = rdoSheets.length > 0 ? rdoSheets : sheetNames;
+
+    const badTitleKeywords = [
+      'REGISTRE', 'BITACORA', 'BITÁCORA', 'CONTROL DE', 'CANTIDAD Y MONTO',
+      'REPORTE DIARIO', 'REPORTE N', 'PRESUPUESTO', 'INSTRUCCIONES', 'OBRAS PRELIMINARES'
+    ];
+
+    for (const sName of sheetsToScan) {
+      const ws = wb.Sheets[sName];
+      if (!ws) continue;
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+      if (!rows || rows.length < 3) continue;
+
+      // Buscar título del proyecto en las primeras 5 filas descartando avisos o instrucciones
+      for (let r = 0; r < Math.min(5, rows.length); r++) {
+        const candidate = String(rows[r]?.[0] || '').trim().replace(/\r?\n/g, ' ');
+        if (
+          candidate.length > 8 &&
+          !badTitleKeywords.some((b) => candidate.toUpperCase().includes(b)) &&
+          !projectData.name
+        ) {
+          projectData.name = candidate;
+          break;
+        }
+      }
+
+      // Escanear celdas de encabezado institucional (filas 0 a 10)
+      for (let r = 0; r < Math.min(12, rows.length); r++) {
+        const row = rows[r];
+        if (!row) continue;
+        for (let c = 0; c < row.length; c++) {
+          const cell = String(row[c] || '').trim();
+          const upper = cell.toUpperCase();
+
+          if (upper.includes('CONTRATISTA:')) {
+            const val = cell.replace(/.*CONTRATISTA:\s*/i, '').trim() || String(row[c + 1] || '').trim();
+            if (val) projectData.contractor = val;
+          }
+          if (upper.includes('CONTRATANTE:')) {
+            const val = cell.replace(/.*CONTRATANTE:\s*/i, '').trim() || String(row[c + 1] || '').trim();
+            if (val) projectData.client = val;
+          }
+          if (upper.includes('FISCALIZACI')) {
+            const val = cell.replace(/.*FISCALIZACI[OÓ]N:\s*/i, '').trim() || String(row[c + 1] || '').trim();
+            if (val) projectData.inspectionCompany = val;
+          }
+          if (upper.includes('EMPRESA EJECUTORA')) {
+            const val = cell.replace(/.*EMPRESA EJECUTORA[^:]*:\s*/i, '').trim() || String(row[c + 1] || '').trim();
+            if (val) projectData.executingCompany = val;
+          }
+          if (upper.includes('CONTRATO N') || upper.includes('CONTRATO Nº')) {
+            const val = cell.replace(/.*CONTRATO\s*N[°º]?:\s*/i, '').trim() || String(row[c + 1] || '').trim();
+            if (val) projectData.contractNumber = val;
+          }
+          if (upper.includes('FINANCIAMIENTO:')) {
+            const val = cell.replace(/.*FINANCIAMIENTO:\s*/i, '').trim() || String(row[c + 1] || '').trim();
+            if (val) projectData.financingSource = val;
+          }
+          if (upper.includes('TRAMO / SEGMENTO:') || upper.includes('TRAMO:')) {
+            const val = cell.replace(/.*TRAMO[^:]*:\s*/i, '').trim() || String(row[c + 1] || '').trim();
+            if (val) projectData.roadSection = val;
+          }
+          if (upper.includes('PLAZO:')) {
+            const plazoVal = cell.replace(/.*PLAZO:\s*/i, '').trim() || String(row[c + 1] || '').trim();
+            const daysMatch = plazoVal.match(/\/(\d+)/) || plazoVal.match(/(\d+)\s*d/i);
+            if (daysMatch) projectData.durationDays = parseInt(daysMatch[1], 10);
+            const monthsMatch = plazoVal.match(/(\d+)\s*mes/i);
+            if (monthsMatch) projectData.durationDays = parseInt(monthsMatch[1], 10) * 30;
+          }
+        }
+      }
+
+      if (projectData.name) break;
+    }
+  }
+
+  // Si no se obtuvo código, intentar derivarlo del contrato o nombre
+  if (!projectData.code) {
+    if (projectData.contractNumber) {
+      projectData.code = projectData.contractNumber.replace(/[^A-Za-z0-9-]/g, '').substring(0, 20);
+    } else if (projectData.name) {
+      const words = projectData.name
+        .split(' ')
+        .filter((w) => w.length > 3 && !['PARA', 'SOBRE', 'ESTE', 'CON'].includes(w.toUpperCase()))
+        .slice(0, 3)
+        .map((w) => w.substring(0, 4).toUpperCase())
+        .join('-');
+      if (words.length >= 3) {
+        projectData.code = words;
+      }
+    }
   }
 
   // 2. Extraer catálogo de rubros

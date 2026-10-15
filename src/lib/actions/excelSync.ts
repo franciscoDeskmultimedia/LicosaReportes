@@ -6,19 +6,62 @@ import { recordAuditLog } from '@/lib/audit';
 import * as XLSX from 'xlsx';
 import fs from 'fs';
 
-// Helper to convert Excel serial dates to Javascript Date (UTC)
+// Helper to convert Excel serial dates and string dates to Javascript Date (UTC)
 function excelDateToDate(val: any): Date {
+  if (!val) return new Date();
   if (val instanceof Date) return val;
   if (typeof val === 'number') {
     const epoch = new Date(Date.UTC(1899, 11, 30));
     return new Date(epoch.getTime() + val * 86400000);
   }
   if (typeof val === 'string') {
-    const d = new Date(val);
+    const s = val.trim();
+    // Formato DD/MM/YYYY o DD-MM-YYYY
+    const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (dmy) {
+      const day = parseInt(dmy[1], 10);
+      const month = parseInt(dmy[2], 10) - 1;
+      let year = parseInt(dmy[3], 10);
+      if (year < 100) year += 2000;
+      return new Date(Date.UTC(year, month, day, 12, 0, 0));
+    }
+    // Formato con mes en español (ej: 08-sep-2026 o 8 sep 2026)
+    const months: Record<string, number> = {
+      ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5,
+      jul: 6, ago: 7, sep: 8, oct: 9, nov: 10, dic: 11,
+    };
+    const monthMatch = s.toLowerCase().match(/(\d{1,2})[\s\-_]+([a-z]{3})[\s\-_]+(\d{2,4})/);
+    if (monthMatch && months[monthMatch[2]] !== undefined) {
+      const day = parseInt(monthMatch[1], 10);
+      const month = months[monthMatch[2]];
+      let year = parseInt(monthMatch[3], 10);
+      if (year < 100) year += 2000;
+      return new Date(Date.UTC(year, month, day, 12, 0, 0));
+    }
+    const d = new Date(s);
     if (!isNaN(d.getTime())) return d;
   }
   return new Date();
 }
+
+/**
+ * Validador estricto para filtrar textos que no corresponden a maquinaria
+ */
+function isValidMachineryName(name: any): boolean {
+  if (!name || typeof name !== 'string') return false;
+  const s = name.trim().toUpperCase();
+  if (s.length < 3) return false;
+  const badKeywords = [
+    'RUBRO', 'PRINCIPAL', 'DESCRIPCI', 'REPORTE', 'PERSONAL', 'CARGO',
+    'CATEGOR', 'ACTIVIDAD', 'OBSERVACI', 'FIRMA', 'CLIMA', 'SEGURIDAD',
+    'TOTAL', 'SUBTOTAL', 'ITEM', 'CANTIDAD', 'UNIDAD', 'HORAS', 'HOROMETRO',
+    'FECHA', 'AYUDANTE', 'RESIDENTE', 'TOPOGRAFO', 'CADENERO', 'CHOFER',
+    'OPERADOR', 'AMBIENTAL', 'PLANILLA'
+  ];
+  if (badKeywords.some((b) => s.includes(b))) return false;
+  return true;
+}
+
 
 function parseNum(val: any, fallback = 0): number {
   if (val === null || val === undefined || val === '') return fallback;
@@ -224,45 +267,104 @@ function extractFullRdoData(
     dateStr = new Date().toISOString().substring(0, 10);
   }
 
-  // Rubros en RDO (filas 29 a 37)
-  const rubros: RubroExecutionPreview[] = [];
-  for (let r = 29; r <= 37; r++) {
-    const row = d[r];
-    if (!row || typeof row[0] !== 'number') continue;
-    const rubroNum = row[0];
-    const desc = String(row[1] || '').trim();
-    const unit = String(row[5] || '').trim();
-    const qty = parseNum(row[6]);
-    const amt = parseNum(row[8]);
-    const unitPrice = qty > 0 ? amt / qty : 0;
-    rubros.push({
-      rubroNumber: rubroNum,
-      description: desc,
-      unit,
-      unitPrice,
-      quantity: qty,
-      amount: amt,
-    });
-  }
-
-  // Maquinaria en RDO (filas 15 a 25)
+  // 1. Maquinaria y Personal en RDO (Detección Dinámica de Secciones)
   const machinery: Array<{ equipment: string; hours: number }> = [];
   const personnel: Array<{ categoryRole: string; quantity: number; manHoursDay: number }> = [];
 
-  for (let r = 15; r <= 25; r++) {
-    const row = d[r];
-    if (!row) continue;
-    const eqDesc = row[0] ? String(row[0]).trim() : '';
-    if (eqDesc && eqDesc !== 'Descripción del equipo') {
-      const dayHours = parseNum(row[5], 0);
-      machinery.push({ equipment: eqDesc, hours: dayHours });
-    }
+  let eqHeaderRow = -1;
+  let colEq = 0;
+  let colEqH = 5;
+  let colEqQty = 4;
+  let colPers = 6;
+  let colPersQty = 10;
+  let colPersH = 11;
 
-    const persRole = row[6] ? String(row[6]).trim() : '';
-    if (persRole && persRole !== 'Categoría / Cargo') {
-      const quantity = Math.round(parseNum(row[10], 1));
-      const manHoursDay = parseNum(row[11], 10);
-      personnel.push({ categoryRole: persRole, quantity, manHoursDay });
+  for (let i = 0; i < Math.min(d.length, 30); i++) {
+    const r = d[i];
+    if (!r || !Array.isArray(r)) continue;
+    const strRow = r.map((c) => String(c || '').toUpperCase());
+    const hasReporte = strRow.some((c) => c && (c.includes('REPORTE DE EQUIPO') || c.includes('DESCRIPCIÓN DEL EQUIPO')));
+    if (hasReporte) {
+      eqHeaderRow = strRow.some((c) => c && c.includes('DESCRIPCIÓN')) ? i : i + 1;
+      break;
+    }
+  }
+
+  if (eqHeaderRow !== -1 && d[eqHeaderRow]) {
+    const hRow = d[eqHeaderRow].map((c) => String(c || '').toUpperCase());
+    hRow.forEach((c, idx) => {
+      if (!c) return;
+      if (c.includes('DESCRIPCIÓN') || c.includes('EQUIPO')) colEq = idx;
+      if (c.includes('HORAS DÍA') || (c.includes('HORA') && !c.includes('HOMBRE'))) colEqH = idx;
+      if (c.includes('CANTIDAD') && idx < 6) colEqQty = idx;
+      if (c.includes('CATEGORÍA') || c.includes('CARGO')) colPers = idx;
+      if (c.includes('N°') && idx >= 6) colPersQty = idx;
+      if (c.includes('H-HOMBRE') || c.includes('HOMBRE')) colPersH = idx;
+    });
+
+    for (let i = eqHeaderRow + 1; i < d.length; i++) {
+      const r = d[i];
+      if (!r || !Array.isArray(r)) continue;
+      const lineText = r.map((c) => String(c || '')).join(' ').toUpperCase();
+      if (lineText.includes('4. RUBROS') || lineText.includes('RUBROS PRINCIPALES') || lineText.includes('N° RUBRO')) {
+        break;
+      }
+
+      const eqName = r[colEq] ? String(r[colEq]).trim() : '';
+      const eqHours = typeof r[colEqH] === 'number' ? r[colEqH] : parseFloat(String(r[colEqH] || '').replace(/,/g, '')) || 0;
+      const eqQty = typeof r[colEqQty] === 'number' ? r[colEqQty] : parseFloat(String(r[colEqQty] || '').replace(/,/g, '')) || 0;
+
+      if (isValidMachineryName(eqName) && (eqHours > 0 || eqQty > 0)) {
+        machinery.push({ equipment: eqName, hours: eqHours });
+      }
+
+      const persName = r[colPers] ? String(r[colPers]).trim() : '';
+      const persQty = typeof r[colPersQty] === 'number' ? r[colPersQty] : parseInt(String(r[colPersQty] || '')) || 0;
+      const persH = typeof r[colPersH] === 'number' ? r[colPersH] : parseFloat(String(r[colPersH] || '')) || 0;
+      if (persName && persQty > 0 && !persName.toUpperCase().includes('CATEGORÍA') && !persName.toUpperCase().includes('CARGO')) {
+        personnel.push({ categoryRole: persName, quantity: persQty, manHoursDay: persH });
+      }
+    }
+  }
+
+  // 2. Rubros en RDO (Detección Dinámica de la Sección 4)
+  const rubros: RubroExecutionPreview[] = [];
+  let rubroHeaderRow = -1;
+  for (let i = 0; i < d.length; i++) {
+    const line = (d[i] || []).map((c) => String(c || '').toUpperCase()).join(' ');
+    if (line.includes('RUBROS PRINCIPALES') || line.includes('4. RUBROS')) {
+      rubroHeaderRow = i + 1;
+      break;
+    }
+  }
+
+  if (rubroHeaderRow !== -1) {
+    for (let i = rubroHeaderRow + 1; i < d.length; i++) {
+      const r = d[i];
+      if (!r || !Array.isArray(r)) continue;
+      const line = r.map((c) => String(c || '').toUpperCase()).join(' ');
+      if (line.includes('5. ACTIVIDADES') || line.includes('ACTIVIDADES REALIZADAS') || line.includes('OBSERVACIONES')) {
+        break;
+      }
+
+      const num = typeof r[0] === 'number' ? r[0] : parseInt(String(r[0] || '').trim(), 10);
+      if (isNaN(num) || num <= 0) continue;
+      const desc = String(r[1] || '').trim();
+      const unit = String(r[5] || 'u').trim();
+      const qty = typeof r[6] === 'number' ? r[6] : parseFloat(String(r[6] || '').replace(/,/g, '')) || 0;
+      const amt = typeof r[8] === 'number' ? r[8] : parseFloat(String(r[8] || '').replace(/,/g, '')) || 0;
+      const unitPrice = qty > 0 ? amt / qty : 0;
+
+      if (desc.length > 2 && (qty > 0 || amt > 0)) {
+        rubros.push({
+          rubroNumber: num,
+          description: desc,
+          unit,
+          unitPrice,
+          quantity: qty,
+          amount: amt,
+        });
+      }
     }
   }
 
@@ -495,10 +597,12 @@ export async function analyzeExcelBuffer(
       const row = horoData[i];
       if (!row || !row[0] || !row[1]) continue;
       const eq = String(row[0]).trim();
+      if (!isValidMachineryName(eq)) continue;
       const rawDate = row[1];
       if (typeof rawDate !== 'number' && isNaN(Date.parse(rawDate))) continue;
       const dStr = excelDateToDate(rawDate).toISOString().substring(0, 10);
       const total = parseNum(row[4], 0);
+      if (total <= 0) continue; // Solo registrar maquinarias que efectivamente trabajaron horas
       if (!horoByDate.has(dStr)) horoByDate.set(dStr, []);
       horoByDate.get(dStr)!.push({
         equipment: eq,
@@ -918,16 +1022,31 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
   for (const item of selectedItems) {
     if (item.machineryLogs) {
       for (const m of item.machineryLogs) {
+        if (!isValidMachineryName(m.equipment)) continue;
         const code = m.equipment.replace(/[^A-Za-z0-9]/g, '_').substring(0, 15).toUpperCase();
         if (!machineIdByCode.has(code)) {
+          const upper = m.equipment.toUpperCase();
+          let category = 'Pesada';
+          if (upper.includes('TRACTOR') || upper.includes('TR-')) category = 'Tractor';
+          else if (upper.includes('RODILLO') || upper.includes('RL-')) category = 'Rodillo';
+          else if (upper.includes('VOLQUETA') || upper.includes('VQ') || upper.includes('BAÑERA') || upper.includes('BANERA')) category = 'Volqueta';
+          else if (upper.includes('MULA') || upper.includes('TRACTOMULA')) category = 'Tractomula';
+          else if (upper.includes('MOTO') || upper.includes('NIVELADORA')) category = 'Motoniveladora';
+          else if (upper.includes('RETRO') || upper.includes('GALLINETA')) category = 'Retroexcavadora';
+          else if (upper.includes('CARGADOR')) category = 'Cargadora';
+          else if (upper.includes('TANQUERO') || upper.includes('AGUA')) category = 'Tanquero';
+          else if (upper.includes('CAMIONETA')) category = 'Camioneta';
+          else if (upper.includes('EXCAVADORA') || upper.includes('EXC') || upper.includes('EX0') || upper.includes('EX1')) category = 'Excavadora';
+
           const mach = await prisma.machinery.upsert({
             where: { code },
-            update: {},
+            update: { name: m.equipment },
             create: {
               code,
               name: m.equipment,
-              category: m.equipment.includes('TRACTOR') ? 'Tractor' : 'Excavadora',
+              category,
               status: 'OPERATIVO',
+              hourlyRate: 0,
             },
           });
           machineIdByCode.set(code, mach.id);
@@ -1186,7 +1305,10 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
 
       // Insertar maquinarias en lote si hay horómetros o equipos en RDO
       if (it.machineryLogs && it.machineryLogs.length > 0) {
-        const machLogsData = it.machineryLogs.map((m) => {
+        const validMachLogs = it.machineryLogs.filter(
+          (m) => isValidMachineryName(m.equipment) && (m.hours > 0 || (m as any).quantity > 0)
+        );
+        const machLogsData = validMachLogs.map((m) => {
           const code = m.equipment.replace(/[^A-Za-z0-9]/g, '_').substring(0, 15).toUpperCase();
           const machId = machineIdByCode.get(code);
           return {
@@ -1199,9 +1321,11 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
           };
         });
 
-        await prisma.dailyReportMachinery.createMany({
-          data: machLogsData,
-        });
+        if (machLogsData.length > 0) {
+          await prisma.dailyReportMachinery.createMany({
+            data: machLogsData,
+          });
+        }
       }
 
       createdCount++;
@@ -1241,6 +1365,47 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
             accumQuantity: r.accumQuantity,
             dayAmount: r.dayAmount,
             accumAmount: r.accumAmount,
+          })),
+        });
+      }
+
+      // Reemplazar o actualizar maquinaria si viene en la sincronización
+      if (it.machineryLogs && it.machineryLogs.length > 0) {
+        await prisma.dailyReportMachinery.deleteMany({
+          where: { dailyReportId: prep.existingId },
+        });
+        const validMachLogs = it.machineryLogs.filter(
+          (m) => isValidMachineryName(m.equipment) && (m.hours > 0 || (m as any).quantity > 0)
+        );
+        if (validMachLogs.length > 0) {
+          await prisma.dailyReportMachinery.createMany({
+            data: validMachLogs.map((m) => {
+              const code = m.equipment.replace(/[^A-Za-z0-9]/g, '_').substring(0, 15).toUpperCase();
+              return {
+                dailyReportId: prep.existingId!,
+                machineryId: machineIdByCode.get(code) || null,
+                description: m.equipment,
+                unit: 'hora',
+                quantity: 1,
+                dayHours: m.hours,
+              };
+            }),
+          });
+        }
+      }
+
+      // Actualizar personal si viene de RDO
+      if (rdo?.personnelLogs && rdo.personnelLogs.length > 0) {
+        await prisma.dailyReportPersonnel.deleteMany({
+          where: { dailyReportId: prep.existingId },
+        });
+        await prisma.dailyReportPersonnel.createMany({
+          data: rdo.personnelLogs.map((p) => ({
+            dailyReportId: prep.existingId!,
+            categoryRole: p.categoryRole,
+            quantity: p.quantity,
+            manHoursDay: p.manHoursDay,
+            totalManHours: p.quantity * p.manHoursDay,
           })),
         });
       }
