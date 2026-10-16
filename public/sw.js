@@ -1,5 +1,5 @@
 // Licosa PWA Service Worker for Web Push Notifications & Offline Shell
-const CACHE_NAME = 'licosa-v2';
+const CACHE_NAME = 'licosa-v3';
 
 // Install event: activate immediately without blocking on heavy network precaching
 self.addEventListener('install', (event) => {
@@ -68,7 +68,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body,
     icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-192x192.png',
+    badge: '/icons/badge-monochrome.png',
     vibrate: [200, 100, 200],
     data: {
       url: data.url || '/',
