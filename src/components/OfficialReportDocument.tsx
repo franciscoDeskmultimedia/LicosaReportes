@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Printer, ArrowLeft, Download, FileSpreadsheet, CheckCircle2, ExternalLink } from 'lucide-react';
+import { formatReportDate } from '@/lib/dateUtils';
 
 interface RubroExecution {
   id: string;
@@ -120,8 +121,7 @@ export function OfficialReportDocument({
   report: DailyReportFull;
   embedded?: boolean;
 }) {
-  const reportDate = new Date(report.date);
-  const formattedDate = reportDate.toLocaleDateString('es-EC', {
+  const formattedDate = formatReportDate(report.date, {
     weekday: 'long',
     year: 'numeric',
     month: 'short',

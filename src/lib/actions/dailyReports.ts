@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { recordAuditLog } from '@/lib/audit';
+import { toSafeUTCDate } from '@/lib/dateUtils';
 
 export async function getDailyReports(projectId?: string) {
   const where: any = {};
@@ -290,7 +291,7 @@ export async function createDailyReport(data: {
       data: {
         projectId: data.projectId,
         reportNumber: data.reportNumber,
-        date: new Date(data.date),
+        date: toSafeUTCDate(data.date),
         roadSection: data.roadSection,
         elapsedDays: data.elapsedDays,
         totalDays: data.totalDays,

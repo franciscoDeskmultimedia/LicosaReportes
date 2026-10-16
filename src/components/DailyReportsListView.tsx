@@ -24,6 +24,7 @@ import {
 import { AdvancedRoadCharts } from '@/components/AdvancedRoadCharts';
 import { ExcelReportSyncModal } from '@/components/ExcelReportSyncModal';
 import { deleteDailyReport } from '@/lib/actions/dailyReports';
+import { formatReportDate } from '@/lib/dateUtils';
 
 interface ProjectOption {
   id: string;
@@ -215,13 +216,7 @@ export function DailyReportsListView({
           </div>
         ) : (
           reports.map((rep) => {
-            const reportDate = new Date(rep.date);
-            const formattedDate = reportDate.toLocaleDateString('es-EC', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            });
+            const formattedDate = formatReportDate(rep.date);
 
             return (
               <div

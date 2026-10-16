@@ -9,13 +9,24 @@ import fs from 'fs';
 // Helper to convert Excel serial dates and string dates to Javascript Date (UTC)
 function excelDateToDate(val: any): Date {
   if (!val) return new Date();
-  if (val instanceof Date) return val;
+  if (val instanceof Date) {
+    return new Date(Date.UTC(val.getUTCFullYear(), val.getUTCMonth(), val.getUTCDate(), 12, 0, 0));
+  }
   if (typeof val === 'number') {
     const epoch = new Date(Date.UTC(1899, 11, 30));
-    return new Date(epoch.getTime() + val * 86400000);
+    // Agregar 12 horas (mediodía UTC) para que el huso horario de Ecuador (UTC-5) nunca retroceda de día
+    return new Date(epoch.getTime() + val * 86400000 + 12 * 3600000);
   }
   if (typeof val === 'string') {
     const s = val.trim();
+    // Formato YYYY-MM-DD
+    const isoMatch = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if (isoMatch) {
+      const year = parseInt(isoMatch[1], 10);
+      const month = parseInt(isoMatch[2], 10) - 1;
+      const day = parseInt(isoMatch[3], 10);
+      return new Date(Date.UTC(year, month, day, 12, 0, 0));
+    }
     // Formato DD/MM/YYYY o DD-MM-YYYY
     const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmy) {
@@ -39,7 +50,9 @@ function excelDateToDate(val: any): Date {
       return new Date(Date.UTC(year, month, day, 12, 0, 0));
     }
     const d = new Date(s);
-    if (!isNaN(d.getTime())) return d;
+    if (!isNaN(d.getTime())) {
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0));
+    }
   }
   return new Date();
 }
@@ -1195,9 +1208,9 @@ export async function analyzeExcelBuffer(
     }
 
     if (sampleText.includes('VALLE') || sampleText.includes('527225')) {
-      project = allProjects.find((p) => p.code.includes('VALLE')) || allProjects[0];
+      project = allProjects.find((p) => p.code.includes('VALLE') || p.name.toUpperCase().includes('VALLE')) || allProjects[0];
     } else if (sampleText.includes('NARCISA') || sampleText.includes('METROPOLIS')) {
-      project = allProjects.find((p) => p.code.includes('NARCISA')) || allProjects[0];
+      project = allProjects.find((p) => p.code.includes('NARCISA') || p.name.toUpperCase().includes('NARCISA') || p.name.toUpperCase().includes('METROPOLIS')) || allProjects[0];
     } else {
       project = allProjects[0];
     }
@@ -1889,7 +1902,7 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
   for (const prep of preparedTimeline) {
     if (!prep.item) continue;
     const it = prep.item;
-    const reportDate = new Date(`${prep.date}T00:00:00.000Z`);
+    const reportDate = new Date(`${prep.date}T12:00:00.000Z`);
 
     const startDiffMs = reportDate.getTime() - new Date(project.startDate).getTime();
     const elapsedDays = Math.max(1, Math.round(startDiffMs / (1000 * 60 * 60 * 24)));

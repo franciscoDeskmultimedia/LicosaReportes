@@ -47,6 +47,7 @@ import { AdjustRubroModal } from '@/components/AdjustRubroModal';
 import { AddRubroModal } from '@/components/AddRubroModal';
 import { BulkRubroImportModal } from '@/components/BulkRubroImportModal';
 import { ExcelReportSyncModal } from '@/components/ExcelReportSyncModal';
+import { formatReportDate } from '@/lib/dateUtils';
 import { AssignWorkerToProjectModal } from '@/components/AssignWorkerToProjectModal';
 import { AssignContractorToProjectModal } from '@/components/AssignContractorToProjectModal';
 import { EditWorkerModal } from '@/components/EditWorkerModal';
@@ -746,7 +747,7 @@ export function ProjectDetailView({
                           Fecha de Emisión
                         </span>
                         <span className="font-black text-slate-900 text-sm">
-                          {new Date(latestReport.date).toLocaleDateString('es-EC', {
+                          {formatReportDate(latestReport.date, {
                             weekday: 'long',
                             year: 'numeric',
                             month: 'long',
@@ -1370,7 +1371,7 @@ export function ProjectDetailView({
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 capitalize">
-                      {new Date(activeViewerReport.date).toLocaleDateString('es-EC', {
+                      {formatReportDate(activeViewerReport.date, {
                         weekday: 'long',
                         year: 'numeric',
                         month: 'long',
@@ -1550,7 +1551,7 @@ export function ProjectDetailView({
                           title="Clic para ver versión HTML"
                         >
                           <span className="font-bold text-slate-900 block group-hover:text-orange-600 transition-colors">
-                            {new Date(rep.date).toLocaleDateString('es-EC', {
+                            {formatReportDate(rep.date, {
                               weekday: 'short',
                               year: 'numeric',
                               month: 'short',
@@ -1982,7 +1983,7 @@ export function ProjectDetailView({
               <p className="text-xs text-slate-500 mt-1">
                 Fecha:{' '}
                 <strong className="text-slate-700">
-                  {new Date(deleteReportTarget.date).toLocaleDateString('es-EC', {
+                  {formatReportDate(deleteReportTarget.date, {
                     weekday: 'long',
                     year: 'numeric',
                     month: 'long',

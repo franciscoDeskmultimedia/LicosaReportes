@@ -25,6 +25,7 @@ import {
   Activity,
   Award,
 } from 'lucide-react';
+import { formatReportDate, formatReportDateShort } from '@/lib/dateUtils';
 
 interface DailyReportHtmlDashboardProps {
   report: any;
@@ -44,19 +45,8 @@ export function DailyReportHtmlDashboard({
   if (!report) return null;
 
   // Formatting helpers
-  const reportDate = new Date(report.date);
-  const formattedDate = reportDate.toLocaleDateString('es-EC', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  const formattedShortDate = reportDate.toLocaleDateString('es-EC', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  const formattedDate = formatReportDate(report.date);
+  const formattedShortDate = formatReportDateShort(report.date);
 
   // Financial & Progress metrics
   const contractBudget = report.contractAmount || report.project?.contractAmount || 1;

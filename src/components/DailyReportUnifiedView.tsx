@@ -16,6 +16,7 @@ import {
 import { DailyReportHtmlDashboard } from '@/components/DailyReportHtmlDashboard';
 import { OfficialReportDocument } from '@/components/OfficialReportDocument';
 import { deleteDailyReport } from '@/lib/actions/dailyReports';
+import { formatReportDate } from '@/lib/dateUtils';
 
 interface DailyReportUnifiedViewProps {
   report: any;
@@ -37,13 +38,7 @@ export function DailyReportUnifiedView({
   if (!report) return null;
 
   const project = report.project;
-  const reportDate = new Date(report.date);
-  const formattedDate = reportDate.toLocaleDateString('es-EC', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const formattedDate = formatReportDate(report.date);
 
   const handleDelete = async () => {
     try {

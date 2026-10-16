@@ -27,6 +27,7 @@ import {
 import { exportMachineryToPdf, exportMachineryProjectPdf } from '@/lib/exportMachineryPdf';
 import { ProjectMachineryChart, ProjectMiniSparkline } from './ProjectMachineryChart';
 import { MachineryAnalyticsTabs } from './MachineryAnalyticsTabs';
+import { toSafeUTCDate, toDateStringUTC, formatReportDate, formatReportDateShort } from '@/lib/dateUtils';
 
 export interface MachineryLogItem {
   id: string;
@@ -260,7 +261,7 @@ export function MachineryDetailModal({
     >();
 
     chronLogs.forEach((l) => {
-      const dStr = new Date(l.dailyReport.date).toISOString().split('T')[0];
+      const dStr = toDateStringUTC(l.dailyReport.date);
       const existing = mapByDate.get(dStr) || { dayHours: 0, value: 0 };
       const r = l.hourlyRate ?? rate;
       existing.dayHours += l.dayHours || 0;
@@ -276,8 +277,8 @@ export function MachineryDetailModal({
       mapByDate.set(dStr, existing);
     });
 
-    const minTime = new Date(chronLogs[0].dailyReport.date).getTime();
-    const maxTime = new Date(chronLogs[chronLogs.length - 1].dailyReport.date).getTime();
+    const minTime = toSafeUTCDate(chronLogs[0].dailyReport.date).getTime();
+    const maxTime = toSafeUTCDate(chronLogs[chronLogs.length - 1].dailyReport.date).getTime();
     const daysDiff = Math.max(Math.round((maxTime - minTime) / (1000 * 60 * 60 * 24)), 1);
 
     const timeline: Array<{
@@ -303,21 +304,19 @@ export function MachineryDetailModal({
     let runningValue = 0;
 
     if (daysDiff <= 90) {
-      const cur = new Date(minTime);
-      cur.setHours(0, 0, 0, 0);
-      const end = new Date(maxTime);
-      end.setHours(0, 0, 0, 0);
+      const cur = toSafeUTCDate(chronLogs[0].dailyReport.date);
+      const end = toSafeUTCDate(chronLogs[chronLogs.length - 1].dailyReport.date);
 
       while (cur.getTime() <= end.getTime()) {
-        const dKey = cur.toISOString().split('T')[0];
+        const dKey = toDateStringUTC(cur);
         const match = mapByDate.get(dKey);
         const dayH = match ? match.dayHours : 0;
         const dayV = match ? match.value : 0;
         runningHours += dayH;
         runningValue += dayV;
 
-        const fDate = `${cur.getDate()}/${cur.getMonth() + 1}`;
-        const fullDate = cur.toLocaleDateString('es-EC', {
+        const fDate = formatReportDateShort(cur).substring(0, 5);
+        const fullDate = formatReportDate(cur, {
           weekday: 'short',
           day: '2-digit',
           month: 'short',
@@ -343,12 +342,11 @@ export function MachineryDetailModal({
           noveltiesRisks: match?.noveltiesRisks,
         });
 
-        cur.setDate(cur.getDate() + 1);
+        cur.setUTCDate(cur.getUTCDate() + 1);
       }
     } else {
       chronLogs.forEach((l) => {
-        const d = new Date(l.dailyReport.date);
-        const dKey = d.toISOString().split('T')[0];
+        const dKey = toDateStringUTC(l.dailyReport.date);
         const match = mapByDate.get(dKey);
         const dayH = match ? match.dayHours : 0;
         const dayV = match ? match.value : 0;
@@ -357,8 +355,8 @@ export function MachineryDetailModal({
 
         timeline.push({
           dateStr: dKey,
-          formattedDate: `${d.getDate()}/${d.getMonth() + 1}`,
-          fullDateStr: d.toLocaleDateString('es-EC', {
+          formattedDate: formatReportDateShort(l.dailyReport.date).substring(0, 5),
+          fullDateStr: formatReportDate(l.dailyReport.date, {
             weekday: 'short',
             day: '2-digit',
             month: 'short',
@@ -693,8 +691,7 @@ export function MachineryDetailModal({
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                   {proj.logs.map((log) => {
-                                    const d = new Date(log.dailyReport.date);
-                                    const formattedDate = d.toLocaleDateString('es-EC', {
+                                    const formattedDate = formatReportDate(log.dailyReport.date, {
                                       weekday: 'short',
                                       day: '2-digit',
                                       month: 'short',
