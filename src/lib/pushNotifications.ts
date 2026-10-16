@@ -129,7 +129,7 @@ export async function sendPushNotificationToAll(payload: PushPayload) {
 }
 
 /**
- * Disparador específico cuando se crea o actualiza un reporte de obra
+ * Disparador específico cuando se crea o actualiza un reporte de obra desde la UI
  */
 export async function notifyNewDailyReport(report: {
   id: string;
@@ -141,7 +141,8 @@ export async function notifyNewDailyReport(report: {
 }) {
   const title = `👷‍♂️ Nuevo Reporte: Obra ${report.projectCode}`;
   const engineerInfo = report.engineerName ? ` por ${report.engineerName}` : '';
-  const body = `Se ha generado el Reporte Diario N° ${String(report.reportNumber).padStart(3, '0')}${engineerInfo} en ${report.projectName}.`;
+  const dateInfo = report.dateStr ? ` (${report.dateStr})` : '';
+  const body = `Se ha generado el Reporte Diario N° ${String(report.reportNumber).padStart(3, '0')}${engineerInfo}${dateInfo} en "${report.projectName}".`;
   const url = `/reportes/${report.id}`;
 
   return await sendPushNotificationToAll({
@@ -151,3 +152,83 @@ export async function notifyNewDailyReport(report: {
     tag: `report-${report.id}`,
   });
 }
+
+/**
+ * Disparador cuando se sincronizan reportes diarios desde Excel
+ */
+export async function notifyDailyReportsSync(data: {
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  createdCount: number;
+  updatedCount: number;
+  datesSummary?: string[];
+  latestReportId?: string;
+}) {
+  const title = `📊 Sincronización Excel: Obra ${data.projectCode}`;
+  const parts: string[] = [];
+  if (data.createdCount > 0) {
+    parts.push(`${data.createdCount} reporte(s) nuevo(s)`);
+  }
+  if (data.updatedCount > 0) {
+    parts.push(`${data.updatedCount} actualizado(s) por discrepancias`);
+  }
+  const summary = parts.length > 0 ? parts.join(' y ') : 'Sincronización completada';
+  const datesText = data.datesSummary && data.datesSummary.length > 0
+    ? ` [${data.datesSummary.slice(0, 3).join(', ')}${data.datesSummary.length > 3 ? '...' : ''}]`
+    : '';
+
+  const body = `${summary}${datesText} en la obra "${data.projectName}".`;
+  const url = data.latestReportId ? `/reportes/${data.latestReportId}` : `/proyectos/${data.projectId}`;
+
+  return await sendPushNotificationToAll({
+    title,
+    body,
+    url,
+    tag: `sync-${data.projectId}-${Date.now()}`,
+  });
+}
+
+/**
+ * Disparador cuando se edita un proyecto o su estado
+ */
+export async function notifyProjectUpdated(data: {
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  description?: string;
+}) {
+  const title = `🏗️ Obra Actualizada: ${data.projectCode}`;
+  const body = data.description || `Se han modificado los datos contractuales de "${data.projectName}".`;
+  const url = `/proyectos/${data.projectId}`;
+
+  return await sendPushNotificationToAll({
+    title,
+    body,
+    url,
+    tag: `project-update-${data.projectId}`,
+  });
+}
+
+/**
+ * Disparador cuando se crea una nueva obra/proyecto
+ */
+export async function notifyProjectCreated(data: {
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  rubrosCount?: number;
+}) {
+  const title = `🚀 Nueva Obra Creada: ${data.projectCode}`;
+  const rubrosText = data.rubrosCount ? ` con ${data.rubrosCount} rubros contractuales` : '';
+  const body = `Se ha registrado e ingresado al sistema la obra "${data.projectName}"${rubrosText}.`;
+  const url = `/proyectos/${data.projectId}`;
+
+  return await sendPushNotificationToAll({
+    title,
+    body,
+    url,
+    tag: `project-create-${data.projectId}`,
+  });
+}
+

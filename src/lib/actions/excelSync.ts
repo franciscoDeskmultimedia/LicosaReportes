@@ -1897,6 +1897,7 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
   // 4. Ejecutar las inserciones/actualizaciones en PostgreSQL
   let createdCount = 0;
   let updatedCount = 0;
+  let latestCreatedReportId: string | undefined;
   const timeSlots = ['0-6', '6-8', '8-10', '10-12', '12-14', '14-16', '16-18', '18-24'];
 
   for (const prep of preparedTimeline) {
@@ -2021,6 +2022,7 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
         }
       }
 
+      latestCreatedReportId = newReport.id;
       createdCount++;
     } else if (it.status === 'DISCREPANCY' && prep.existingId) {
       // Actualizar reporte existente
@@ -2123,6 +2125,22 @@ export async function applyExcelSync(payload: SyncApplyPayload) {
     });
   } catch (auditErr) {
     console.warn('Aviso: no se pudo registrar AuditLog en este contexto:', auditErr);
+  }
+
+  // Disparar Notificación Push a los dispositivos suscritos
+  try {
+    const { notifyDailyReportsSync } = await import('@/lib/pushNotifications');
+    await notifyDailyReportsSync({
+      projectId,
+      projectCode: project.code,
+      projectName: project.name,
+      createdCount,
+      updatedCount,
+      datesSummary: selectedItems.map((i) => i.date),
+      latestReportId: latestCreatedReportId,
+    });
+  } catch (notifErr) {
+    console.warn('Aviso: no se pudo enviar notificación de sincronización:', notifErr);
   }
 
   try {

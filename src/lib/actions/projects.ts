@@ -203,6 +203,18 @@ export async function updateProjectStatus(projectId: string, status: string) {
     metadata: { status },
   });
 
+  try {
+    const { notifyProjectUpdated } = await import('@/lib/pushNotifications');
+    await notifyProjectUpdated({
+      projectId: project.id,
+      projectCode: project.code,
+      projectName: project.name,
+      description: `El estado de la obra ha cambiado a: ${status}.`,
+    });
+  } catch (notifErr) {
+    console.warn('Aviso: no se pudo enviar notificación de estado de proyecto:', notifErr);
+  }
+
   revalidatePath('/proyectos');
   revalidatePath(`/proyectos/${projectId}`);
   revalidatePath('/');
@@ -256,6 +268,18 @@ export async function updateProject(
     metadata: formData,
   });
 
+  try {
+    const { notifyProjectUpdated } = await import('@/lib/pushNotifications');
+    await notifyProjectUpdated({
+      projectId: project.id,
+      projectCode: project.code,
+      projectName: project.name,
+      description: `Se han actualizado los datos contractuales de "${project.name}".`,
+    });
+  } catch (notifErr) {
+    console.warn('Aviso: no se pudo enviar notificación de actualización de proyecto:', notifErr);
+  }
+
   revalidatePath('/proyectos');
   revalidatePath(`/proyectos/${projectId}`);
   revalidatePath('/');
@@ -308,6 +332,17 @@ export async function createProject(formData: {
       client: project.client,
     },
   });
+
+  try {
+    const { notifyProjectCreated } = await import('@/lib/pushNotifications');
+    await notifyProjectCreated({
+      projectId: project.id,
+      projectCode: project.code,
+      projectName: project.name,
+    });
+  } catch (notifErr) {
+    console.warn('Aviso: no se pudo enviar notificación de creación de proyecto:', notifErr);
+  }
 
   revalidatePath('/proyectos');
   revalidatePath('/');
@@ -636,6 +671,18 @@ export async function createProjectWithRubros(payload: {
       contractAmount: project.contractAmount,
     },
   });
+
+  try {
+    const { notifyProjectCreated } = await import('@/lib/pushNotifications');
+    await notifyProjectCreated({
+      projectId: project.id,
+      projectCode: project.code,
+      projectName: project.name,
+      rubrosCount: payload.rubros?.length,
+    });
+  } catch (notifErr) {
+    console.warn('Aviso: no se pudo enviar notificación de creación de proyecto desde Excel:', notifErr);
+  }
 
   revalidatePath('/proyectos');
   revalidatePath('/');
