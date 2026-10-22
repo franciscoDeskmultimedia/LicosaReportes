@@ -22,6 +22,7 @@ import {
   ChevronDown,
   X,
   Code2,
+  Edit3,
 } from 'lucide-react';
 
 export interface AuditLogItem {
@@ -76,7 +77,7 @@ export function AuditLogView({
           if (!['INGRESO_BODEGA', 'DESPACHO_BODEGA', 'CREAR_ITEM_BODEGA'].includes(log.action))
             return false;
         } else if (selectedAction === 'REPORTES') {
-          if (!['REPORTE_DIARIO_CREADO', 'REPORTE_DIARIO_ELIMINADO'].includes(log.action))
+          if (!['REPORTE_DIARIO_CREADO', 'REPORTE_DIARIO_ELIMINADO', 'REPORTE_DIARIO_EDITADO'].includes(log.action))
             return false;
         } else if (selectedAction === 'CONTRATO') {
           if (!['REAJUSTE_RUBRO', 'PROYECTO_CREADO', 'RUBRO_CREADO'].includes(log.action))
@@ -115,7 +116,7 @@ export function AuditLogView({
       ['INGRESO_BODEGA', 'DESPACHO_BODEGA', 'CREAR_ITEM_BODEGA'].includes(l.action)
     ).length;
     const reportes = logs.filter((l) =>
-      ['REPORTE_DIARIO_CREADO', 'REPORTE_DIARIO_ELIMINADO'].includes(l.action)
+      ['REPORTE_DIARIO_CREADO', 'REPORTE_DIARIO_ELIMINADO', 'REPORTE_DIARIO_EDITADO'].includes(l.action)
     ).length;
     const contratos = logs.filter((l) =>
       ['REAJUSTE_RUBRO', 'PROYECTO_CREADO', 'RUBRO_CREADO'].includes(l.action)
@@ -152,6 +153,12 @@ export function AuditLogView({
           label: 'Reporte Diario Creado',
           icon: FileText,
           className: 'bg-blue-50 text-blue-700 border-blue-200',
+        };
+      case 'REPORTE_DIARIO_EDITADO':
+        return {
+          label: 'Reporte Diario Editado',
+          icon: Edit3,
+          className: 'bg-amber-50 text-amber-800 border-amber-300',
         };
       case 'REPORTE_DIARIO_ELIMINADO':
         return {
@@ -490,32 +497,32 @@ export function AuditLogView({
       {/* Metadata Inspector Modal */}
       {activeMetadataModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-2">
                 <Code2 className="w-4 h-4 text-orange-600" />
                 <h3 className="font-bold text-slate-900 text-sm">
-                  Detalles Técnicos del Evento ({activeMetadataModal.action})
+                  Detalles del Evento ({activeMetadataModal.action})
                 </h3>
               </div>
               <button
                 onClick={() => setActiveMetadataModal(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs space-y-1">
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5">
                 <p>
                   <strong className="text-slate-700">ID del Registro:</strong>{' '}
                   <span className="font-mono text-slate-600">{activeMetadataModal.id}</span>
                 </p>
                 <p>
-                  <strong className="text-slate-700">Usuario:</strong>{' '}
+                  <strong className="text-slate-700">Usuario Responsable:</strong>{' '}
                   <span className="text-slate-900 font-semibold">{activeMetadataModal.userName}</span>{' '}
-                  ({activeMetadataModal.userEmail}) - Rol: {activeMetadataModal.userRole}
+                  ({activeMetadataModal.userEmail}) - <span className="font-mono px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 text-[10px]">{activeMetadataModal.userRole}</span>
                 </p>
                 <p>
                   <strong className="text-slate-700">Fecha y Hora:</strong>{' '}
@@ -525,19 +532,108 @@ export function AuditLogView({
                 </p>
                 <p>
                   <strong className="text-slate-700">Descripción:</strong>{' '}
-                  <span className="text-slate-800">{activeMetadataModal.description}</span>
+                  <span className="text-slate-800 font-medium">{activeMetadataModal.description}</span>
                 </p>
               </div>
 
-              <div>
-                <p className="text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Metadatos Estructurados (JSON)</span>
-                  <span className="text-[10px] text-slate-400 font-normal">Solo lectura</span>
-                </p>
-                <pre className="bg-slate-900 text-emerald-400 p-3.5 rounded-xl text-xs font-mono overflow-x-auto leading-relaxed border border-slate-800">
-                  {JSON.stringify(JSON.parse(activeMetadataModal.metadata || '{}'), null, 2)}
-                </pre>
-              </div>
+              {(() => {
+                const parsed = JSON.parse(activeMetadataModal.metadata || '{}');
+                const hasChanges = Array.isArray(parsed.changes) && parsed.changes.length > 0;
+
+                return (
+                  <>
+                    {parsed.reason && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs">
+                        <span className="font-bold text-amber-900 block mb-0.5">Motivo / Justificación Técnica:</span>
+                        <p className="text-amber-800 italic">"{parsed.reason}"</p>
+                      </div>
+                    )}
+
+                    {hasChanges && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                            Detalle de Modificaciones Realizadas ({parsed.changes.length})
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-medium">
+                            {parsed.changesSummary}
+                          </span>
+                        </div>
+
+                        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                          <table className="w-full text-xs text-left">
+                            <thead className="bg-slate-100 text-slate-600 text-[11px] uppercase font-bold border-b border-slate-200">
+                              <tr>
+                                <th className="p-2.5">Área / Categoría</th>
+                                <th className="p-2.5">Elemento / Campo</th>
+                                <th className="p-2.5">Valor Anterior</th>
+                                <th className="p-2.5">Valor Nuevo</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {parsed.changes.map((ch: any, idx: number) => (
+                                <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="p-2.5">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                      {ch.category || 'General'}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 font-medium text-slate-900">
+                                    {ch.label || ch.field}
+                                  </td>
+                                  <td className="p-2.5 font-mono text-slate-500 bg-rose-50/40 text-rose-800">
+                                    {String(ch.oldValue)}
+                                  </td>
+                                  <td className="p-2.5 font-mono font-semibold text-emerald-800 bg-emerald-50/40">
+                                    {String(ch.newValue)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {parsed.financialImpact && (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-xs">
+                            <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                              <span className="text-[10px] text-slate-500 block">Avance Día Anterior:</span>
+                              <span className="font-bold text-slate-800 font-mono">
+                                ${Number(parsed.financialImpact.previousExecutedDay || 0).toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                              <span className="text-[10px] text-slate-500 block">Nuevo Avance Día:</span>
+                              <span className="font-bold text-emerald-700 font-mono">
+                                ${Number(parsed.financialImpact.newExecutedDay || 0).toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 col-span-2 sm:col-span-1">
+                              <span className="text-[10px] text-slate-500 block">Variación Neta:</span>
+                              <span className={`font-bold font-mono ${
+                                Number(parsed.financialImpact.diffExecutedDay || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                              }`}>
+                                {Number(parsed.financialImpact.diffExecutedDay || 0) >= 0 ? '+' : ''}
+                                ${Number(parsed.financialImpact.diffExecutedDay || 0).toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                        <span>Metadatos Estructurados (JSON Crudo)</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Auditoría inmutable</span>
+                      </p>
+                      <pre className="bg-slate-900 text-emerald-400 p-3.5 rounded-xl text-xs font-mono overflow-x-auto leading-relaxed border border-slate-800 max-h-48">
+                        {JSON.stringify(parsed, null, 2)}
+                      </pre>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">

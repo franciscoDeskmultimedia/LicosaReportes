@@ -24,6 +24,7 @@ import {
   Building2,
   Activity,
   Award,
+  Edit3,
 } from 'lucide-react';
 import { formatReportDate, formatReportDateShort } from '@/lib/dateUtils';
 
@@ -154,6 +155,15 @@ export function DailyReportHtmlDashboard({
             >
               <ExternalLink className="w-3.5 h-3.5" />
               <span>Página Completa</span>
+            </Link>
+
+            <Link
+              href={`/reportes/${report.id}/editar`}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+              title="Editar este reporte diario"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-slate-950" />
+              <span>Editar Reporte</span>
             </Link>
 
             <Link

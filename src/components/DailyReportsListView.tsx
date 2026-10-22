@@ -20,6 +20,7 @@ import {
   Loader2,
   X,
   Download,
+  Edit3,
 } from 'lucide-react';
 import { AdvancedRoadCharts } from '@/components/AdvancedRoadCharts';
 import { ExcelReportSyncModal } from '@/components/ExcelReportSyncModal';
@@ -317,6 +318,15 @@ export function DailyReportsListView({
                     >
                       <Printer className="w-3.5 h-3.5 text-orange-400" />
                       <span className="hidden sm:inline">Imprimir</span>
+                    </Link>
+
+                    <Link
+                      href={`/reportes/${rep.id}/editar`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-2xs transition-colors"
+                      title="Editar Reporte Diario (Admin)"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-slate-950" />
+                      <span>Editar</span>
                     </Link>
 
                     {isAdmin && (

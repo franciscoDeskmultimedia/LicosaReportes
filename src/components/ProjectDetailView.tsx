@@ -40,6 +40,7 @@ import {
   X,
   Receipt,
   Loader2,
+  Edit3,
 } from 'lucide-react';
 import { ProjectExpensesTab } from '@/components/ProjectExpensesTab';
 import { ProjectDynamicCurves } from '@/components/ProjectDynamicCurves';
@@ -240,6 +241,7 @@ export function ProjectDetailView({
   const [deleteReportError, setDeleteReportError] = useState<string | null>(null);
 
   const canDeleteReports = currentUser?.role === 'ADMIN' || currentUser?.role === 'RESIDENTE_OBRA';
+  const canEditReports = currentUser?.role === 'ADMIN' || currentUser?.role === 'RESIDENTE_OBRA';
 
   async function handleDeleteReportConfirm() {
     if (!deleteReportTarget) return;
@@ -825,6 +827,16 @@ export function ProjectDetailView({
                       <ExternalLink className="w-3.5 h-3.5" />
                       <span>Ver Informe Oficial</span>
                     </Link>
+                    {canEditReports && (
+                      <Link
+                        href={`/reportes/${latestReport.id}/editar`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs shadow-xs transition-all"
+                        title="Editar Reporte Diario"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-slate-950" />
+                        <span>Editar Reporte</span>
+                      </Link>
+                    )}
                     <Link
                       href={`/reportes/${latestReport.id}/imprimir`}
                       target="_blank"
@@ -1294,6 +1306,18 @@ export function ProjectDetailView({
                     <span className="hidden md:inline">Página Completa</span>
                   </Link>
 
+                  {/* Edit */}
+                  {canEditReports && (
+                    <Link
+                      href={`/reportes/${activeViewerReport.id}/editar`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold shadow-xs transition-colors"
+                      title="Editar este reporte diario"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-slate-950" />
+                      <span>Editar Reporte</span>
+                    </Link>
+                  )}
+
                   {/* Print */}
                   <Link
                     href={`/reportes/${activeViewerReport.id}/imprimir`}
@@ -1500,6 +1524,17 @@ export function ProjectDetailView({
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </Link>
+
+                          {/* Edit */}
+                          {canEditReports && (
+                            <Link
+                              href={`/reportes/${rep.id}/editar`}
+                              className="p-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 transition-colors shadow-2xs"
+                              title="Editar Reporte Diario"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-slate-950" />
+                            </Link>
+                          )}
 
                           {/* Print */}
                           <Link

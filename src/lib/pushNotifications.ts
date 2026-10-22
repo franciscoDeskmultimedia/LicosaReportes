@@ -232,3 +232,29 @@ export async function notifyProjectCreated(data: {
   });
 }
 
+/**
+ * Disparador cuando un administrador edita un reporte diario existente
+ */
+export async function notifyDailyReportEdited(data: {
+  id: string;
+  reportNumber: number;
+  projectCode: string;
+  projectName: string;
+  editorName: string;
+  changesSummary: string;
+  reason?: string;
+}) {
+  const title = `✏️ Reporte N° ${String(data.reportNumber).padStart(3, '0')} Modificado: Obra ${data.projectCode}`;
+  const reasonText = data.reason ? ` Motivo: "${data.reason}".` : '';
+  const body = `El Administrador ${data.editorName} modificó el reporte diario de "${data.projectName}". ${data.changesSummary}.${reasonText}`;
+  const url = `/reportes/${data.id}`;
+
+  return await sendPushNotificationToAll({
+    title,
+    body,
+    url,
+    tag: `report-edit-${data.id}-${Date.now()}`,
+  });
+}
+
+
