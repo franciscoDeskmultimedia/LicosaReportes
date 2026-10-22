@@ -271,7 +271,7 @@ export function DailyReportsListView({
                     <div>
                       <span className="text-[11px] text-slate-400 block font-medium">% Avance</span>
                       <span className="font-mono font-black text-orange-600 text-base">
-                        {rep.progressPercentAccum.toFixed(2)}%
+                        {rep.progressPercentAccum.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                       </span>
                     </div>
                   </div>
@@ -288,7 +288,7 @@ export function DailyReportsListView({
                         key={rx.id}
                         className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-mono text-[11px]"
                       >
-                        Rubro {rx.projectRubro.rubroNumber}: {rx.dayQuantity.toLocaleString('es-EC')} {rx.projectRubro.unit} (${rx.dayAmount.toLocaleString('es-EC', { minimumFractionDigits: 2 })})
+                        Rubro {rx.projectRubro.rubroNumber}: {rx.dayQuantity.toLocaleString('es-EC', { maximumFractionDigits: 2 })} {rx.projectRubro.unit} (${rx.dayAmount.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                       </span>
                     ))}
                   </div>

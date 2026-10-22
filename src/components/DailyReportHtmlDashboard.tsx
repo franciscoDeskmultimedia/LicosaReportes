@@ -192,7 +192,7 @@ export function DailyReportHtmlDashboard({
               </span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-2xl font-black text-slate-900 font-mono">
-                  {progressPercent.toFixed(1)}%
+                  {progressPercent.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                 </span>
                 <span className="text-xs text-slate-400 font-mono">
                   de 100%
@@ -207,7 +207,7 @@ export function DailyReportHtmlDashboard({
                   }`}
                 >
                   <TrendingUp className="w-3 h-3" />
-                  SPI {spi.toFixed(2)} ({isHealthyProgress ? 'En Ritmo' : 'Retraso'})
+                  SPI {spi.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({isHealthyProgress ? 'En Ritmo' : 'Retraso'})
                 </span>
               </div>
             </div>
@@ -416,7 +416,7 @@ export function DailyReportHtmlDashboard({
                             <span>Estado: <strong className={isStandby ? 'text-slate-500' : 'text-emerald-600'}>{m.status || (hoursDay > 0 ? 'OPERATIVO' : 'EN ESPERA')}</strong></span>
                             {rate > 0 && (
                               <span className="text-emerald-700 font-semibold bg-emerald-50 px-1 rounded">
-                                ${rate.toFixed(2)}/h
+                                ${rate.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/h
                               </span>
                             )}
                           </div>
@@ -429,7 +429,7 @@ export function DailyReportHtmlDashboard({
                           <div className="bg-emerald-50/70 px-2 py-1 rounded-lg border border-emerald-100 hidden md:block">
                             <p className="text-[9px] uppercase font-bold text-emerald-700">Valor/h</p>
                             <p className="text-xs font-extrabold text-emerald-800 font-mono">
-                              ${rate.toFixed(2)}
+                              ${rate.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                           </div>
                         )}
@@ -632,7 +632,7 @@ export function DailyReportHtmlDashboard({
                     ${accumBilled.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td className="py-3 px-4 text-emerald-300 text-xs font-bold font-sans">
-                    {progressPercent.toFixed(2)}% del contrato
+                    {progressPercent.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% del contrato
                   </td>
                 </tr>
               </tfoot>

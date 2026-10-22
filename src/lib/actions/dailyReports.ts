@@ -161,6 +161,7 @@ export async function getPreviousReportStats(projectId: string) {
     orderBy: { reportNumber: 'desc' },
     include: {
       rubroExecutions: true,
+      personnelLogs: true,
       project: true,
     },
   });
@@ -188,8 +189,54 @@ export async function getPreviousReportStats(projectId: string) {
     }
   }
 
+  // Acumulados históricos de rubros (para asegurar que ningún rubro quede en 0 si no se ejecutó en el último reporte)
+  const allPriorExecs = await prisma.dailyRubroExecution.findMany({
+    where: {
+      dailyReport: {
+        projectId,
+        reportNumber: { lte: lastReport.reportNumber },
+      },
+    },
+    select: {
+      projectRubroId: true,
+      accumQuantity: true,
+      accumAmount: true,
+      dailyReport: {
+        select: { reportNumber: true },
+      },
+    },
+    orderBy: {
+      dailyReport: { reportNumber: 'desc' },
+    },
+  });
+
+  const latestRubroAccum = new Map<string, { accumQuantity: number; accumAmount: number }>();
+  for (const exec of allPriorExecs) {
+    if (!latestRubroAccum.has(exec.projectRubroId)) {
+      latestRubroAccum.set(exec.projectRubroId, {
+        accumQuantity: exec.accumQuantity,
+        accumAmount: exec.accumAmount,
+      });
+    }
+  }
+
+  // Si algún rubro del último reporte tiene datos más frescos, tenerlo en cuenta
+  for (const exec of lastReport.rubroExecutions) {
+    latestRubroAccum.set(exec.projectRubroId, {
+      accumQuantity: exec.accumQuantity,
+      accumAmount: exec.accumAmount,
+    });
+  }
+
+  const consolidatedRubroExecutions = Array.from(latestRubroAccum.entries()).map(([projectRubroId, data]) => ({
+    projectRubroId,
+    accumQuantity: data.accumQuantity,
+    accumAmount: data.accumAmount,
+  }));
+
   return {
     ...lastReport,
+    rubroExecutions: consolidatedRubroExecutions,
     previousMachineryHours,
   };
 }
@@ -265,9 +312,25 @@ export async function createDailyReport(data: {
     conditionCode: number;
   }>;
 }) {
-  // Calcular totales
+  // Calcular totales del día
   const totalExecutedDay = data.rubroExecutions.reduce((sum, r) => sum + r.dayAmount, 0);
-  const totalExecutedAccum = data.rubroExecutions.reduce((sum, r) => sum + r.accumAmount, 0);
+
+  // Obtener el reporte anterior para sumar el acumulado de manera continua
+  const previousReport = await prisma.dailyReport.findFirst({
+    where: {
+      projectId: data.projectId,
+      reportNumber: { lt: data.reportNumber },
+    },
+    orderBy: { reportNumber: 'desc' },
+    select: {
+      totalExecutedAccum: true,
+      principalExecutedAccum: true,
+      nonPrincipalExecutedAccum: true,
+    },
+  });
+
+  const baseAccum = previousReport?.totalExecutedAccum || 0;
+  const totalExecutedAccum = baseAccum + totalExecutedDay;
 
   // Obtener monto contractual del proyecto para calcular % acumulado
   const project = await prisma.project.findUnique({
@@ -280,22 +343,21 @@ export async function createDailyReport(data: {
 
   // Separar principal vs no principal
   let principalExecutedDay = 0;
-  let principalExecutedAccum = 0;
   let nonPrincipalExecutedDay = 0;
-  let nonPrincipalExecutedAccum = 0;
 
   if (project?.rubros) {
     const rubroMap = new Map(project.rubros.map((r) => [r.id, r.isPrincipal]));
     for (const exec of data.rubroExecutions) {
       if (rubroMap.get(exec.projectRubroId)) {
         principalExecutedDay += exec.dayAmount;
-        principalExecutedAccum += exec.accumAmount;
       } else {
         nonPrincipalExecutedDay += exec.dayAmount;
-        nonPrincipalExecutedAccum += exec.accumAmount;
       }
     }
   }
+
+  const principalExecutedAccum = (previousReport?.principalExecutedAccum || 0) + principalExecutedDay;
+  const nonPrincipalExecutedAccum = (previousReport?.nonPrincipalExecutedAccum || 0) + nonPrincipalExecutedDay;
 
   const result = await prisma.$transaction(async (tx) => {
     // 1. Create Report
@@ -770,25 +832,40 @@ export async function updateDailyReport(data: {
 
   // Totales económicos recalculados
   const totalExecutedDay = data.rubroExecutions.reduce((sum, r) => sum + r.dayAmount, 0);
-  const totalExecutedAccum = data.rubroExecutions.reduce((sum, r) => sum + r.accumAmount, 0);
+
+  // Obtener el reporte anterior para sumar el acumulado de manera continua
+  const previousReport = await prisma.dailyReport.findFirst({
+    where: {
+      projectId: existingReport.projectId,
+      reportNumber: { lt: data.reportNumber },
+    },
+    orderBy: { reportNumber: 'desc' },
+    select: {
+      totalExecutedAccum: true,
+      principalExecutedAccum: true,
+      nonPrincipalExecutedAccum: true,
+    },
+  });
+
+  const baseAccum = previousReport?.totalExecutedAccum || 0;
+  const totalExecutedAccum = baseAccum + totalExecutedDay;
   const contractTotal = existingReport.project.contractAmount || 1;
   const progressPercentAccum = (totalExecutedAccum / contractTotal) * 100;
 
   let principalExecutedDay = 0;
-  let principalExecutedAccum = 0;
   let nonPrincipalExecutedDay = 0;
-  let nonPrincipalExecutedAccum = 0;
 
   for (const exec of data.rubroExecutions) {
     const rubro = rubroMap.get(exec.projectRubroId);
     if (rubro?.isPrincipal) {
       principalExecutedDay += exec.dayAmount;
-      principalExecutedAccum += exec.accumAmount;
     } else {
       nonPrincipalExecutedDay += exec.dayAmount;
-      nonPrincipalExecutedAccum += exec.accumAmount;
     }
   }
+
+  const principalExecutedAccum = (previousReport?.principalExecutedAccum || 0) + principalExecutedDay;
+  const nonPrincipalExecutedAccum = (previousReport?.nonPrincipalExecutedAccum || 0) + nonPrincipalExecutedDay;
 
   // Delta de horas de maquinaria
   const machineryHourDelta = new Map<string, number>();

@@ -20,8 +20,11 @@ import {
   Search,
   Hash,
   X,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { createDailyReport } from '@/lib/actions/dailyReports';
+import { createMachinery } from '@/lib/actions/machinery';
 
 interface ProjectRubro {
   id: string;
@@ -63,6 +66,11 @@ interface PreviousReportData {
     projectRubroId: string;
     accumQuantity: number;
     accumAmount: number;
+  }>;
+  personnelLogs?: Array<{
+    categoryRole: string;
+    quantity: number;
+    manHoursDay: number;
   }>;
 }
 
@@ -159,12 +167,69 @@ export function NewDailyReportForm({
     };
   });
   const [machineryRows, setMachineryRows] = useState(initialMachineryRows);
+  const [machinerySearch, setMachinerySearch] = useState('');
+  const [isCreateMachineryOpen, setIsCreateMachineryOpen] = useState(false);
+  const [creatingMachinery, setCreatingMachinery] = useState(false);
+  const [newMachCode, setNewMachCode] = useState('');
+  const [newMachName, setNewMachName] = useState('');
+  const [newMachCategory, setNewMachCategory] = useState('Excavadora');
+  const [newMachHourlyRate, setNewMachHourlyRate] = useState('0');
 
   function handleMachineChange(id: string, field: 'dayHours' | 'notes', value: string) {
     setMachineryRows((prev) =>
       prev.map((m) => (m.machineryId === id ? { ...m, [field]: value } : m))
     );
   }
+
+  async function handleCreateMachinerySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newMachCode.trim() || !newMachName.trim()) return;
+    try {
+      setCreatingMachinery(true);
+      const created = await createMachinery({
+        code: newMachCode.trim().toUpperCase(),
+        name: newMachName.trim().toUpperCase(),
+        category: newMachCategory,
+        unit: 'hora',
+        hourlyRate: parseFloat(newMachHourlyRate) || 0,
+      });
+
+      setMachineryRows((prev) => [
+        {
+          machineryId: created.id,
+          code: created.code,
+          description: created.name,
+          unit: created.unit,
+          quantity: 1,
+          previousHours: 0,
+          dayHours: '',
+          notes: '',
+        },
+        ...prev,
+      ]);
+
+      setNewMachCode('');
+      setNewMachName('');
+      setNewMachHourlyRate('0');
+      setIsCreateMachineryOpen(false);
+      setMachinerySearch(created.code);
+    } catch (err: any) {
+      alert(err?.message || 'Error al crear la maquinaria');
+    } finally {
+      setCreatingMachinery(false);
+    }
+  }
+
+  const filteredMachineryRows = useMemo(() => {
+    if (!machinerySearch.trim()) return machineryRows;
+    const q = machinerySearch.toLowerCase().trim();
+    return machineryRows.filter(
+      (m) =>
+        m.code.toLowerCase().includes(q) ||
+        m.description.toLowerCase().includes(q) ||
+        m.unit.toLowerCase().includes(q)
+    );
+  }, [machineryRows, machinerySearch]);
 
   // 5. Personnel Rows
   const defaultPersonnel = [
@@ -180,7 +245,21 @@ export function NewDailyReportForm({
     { categoryRole: 'Chofer de tanquero', quantity: 1, manHoursDay: 10 },
     { categoryRole: 'Ambiental', quantity: 1, manHoursDay: 8 },
   ];
-  const [personnelRows, setPersonnelRows] = useState(defaultPersonnel);
+
+  const initialPersonnel =
+    previousReport?.personnelLogs && previousReport.personnelLogs.length > 0
+      ? previousReport.personnelLogs.map((p) => ({
+          categoryRole: p.categoryRole,
+          quantity: p.quantity,
+          manHoursDay: p.manHoursDay,
+        }))
+      : defaultPersonnel;
+
+  const [personnelRows, setPersonnelRows] = useState(initialPersonnel);
+  const [isAddPersonnelOpen, setIsAddPersonnelOpen] = useState(false);
+  const [newPersonnelRole, setNewPersonnelRole] = useState('');
+  const [newPersonnelQty, setNewPersonnelQty] = useState('1');
+  const [newPersonnelHours, setNewPersonnelHours] = useState('10');
 
   function handlePersonnelChange(index: number, field: 'quantity' | 'manHoursDay', value: number) {
     setPersonnelRows((prev) =>
@@ -188,16 +267,44 @@ export function NewDailyReportForm({
     );
   }
 
-  // 6. Activities & Comments
-  const [activitiesTodayVial, setActivitiesTodayVial] = useState('EXCAVACION - DESALOJO\nRELLENO MATERIAL DE PRESTAMO IMPORTADO\nDESBROCE');
+  function handleAddPersonnel() {
+    if (!newPersonnelRole.trim()) return;
+    setPersonnelRows((prev) => [
+      ...prev,
+      {
+        categoryRole: newPersonnelRole.trim(),
+        quantity: parseInt(newPersonnelQty) || 1,
+        manHoursDay: parseFloat(newPersonnelHours) || 8,
+      },
+    ]);
+    setNewPersonnelRole('');
+    setNewPersonnelQty('1');
+    setNewPersonnelHours('10');
+    setIsAddPersonnelOpen(false);
+  }
+
+  function handleDeletePersonnel(index: number) {
+    setPersonnelRows((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // 6. Activities & Comments (inician vacíos por requerimiento)
+  const [activitiesTodayVial, setActivitiesTodayVial] = useState('');
   const [activitiesTodayPavimento, setActivitiesTodayPavimento] = useState('');
-  const [activitiesTodayDrenaje, setActivitiesTodayDrenaje] = useState('INSTALACION DE TUBERIA H.A 1200 -\nEXCAVACION Y RELLENO PARA ESTRUCTURAS');
-  const [activitiesTodayPuentes, setActivitiesTodayPuentes] = useState('CONSTRUCCION DE ACCESO PROVISIONAL');
-  const [activitiesTodayAmbiental, setActivitiesTodayAmbiental] = useState('AGUA PARA CONTROL DE POLVO');
-  const [activitiesTomorrowVial, setActivitiesTomorrowVial] = useState('CONTINUACIÓN DE RELLENO Y COMPACTACIÓN');
-  const [noveltiesRisks, setNoveltiesRisks] = useState('EX 09: CANTERA LA CABUYA PRODUCCIÓN Y CARGADA DE VOLQUETA\nRL 16: COMPACTACION DE CAPA DE PRESTAMO');
-  const [contractorComments, setContractorComments] = useState('Se solicita aprobación de densidades en capa 1.');
-  const [supervisorComments, setSupervisorComments] = useState('Se constata avance conforme a especificaciones técnicas.');
+  const [activitiesTodayDrenaje, setActivitiesTodayDrenaje] = useState('');
+  const [activitiesTodayPuentes, setActivitiesTodayPuentes] = useState('');
+  const [activitiesTodayTopografia, setActivitiesTodayTopografia] = useState('');
+  const [activitiesTodaySenalizacion, setActivitiesTodaySenalizacion] = useState('');
+  const [activitiesTodayAmbiental, setActivitiesTodayAmbiental] = useState('');
+  const [activitiesTomorrowVial, setActivitiesTomorrowVial] = useState('');
+  const [activitiesTomorrowPavimento, setActivitiesTomorrowPavimento] = useState('');
+  const [activitiesTomorrowDrenaje, setActivitiesTomorrowDrenaje] = useState('');
+  const [activitiesTomorrowPuentes, setActivitiesTomorrowPuentes] = useState('');
+  const [activitiesTomorrowTopografia, setActivitiesTomorrowTopografia] = useState('');
+  const [activitiesTomorrowSenalizacion, setActivitiesTomorrowSenalizacion] = useState('');
+  const [activitiesTomorrowAmbiental, setActivitiesTomorrowAmbiental] = useState('');
+  const [noveltiesRisks, setNoveltiesRisks] = useState('');
+  const [contractorComments, setContractorComments] = useState('');
+  const [supervisorComments, setSupervisorComments] = useState('');
 
   // 7. Hourly weather (Codes: 1=Despejado, 2=Nublado, 3=Llovizna, 4=Lluvia)
   const timeSlots = ['0-6', '6-8', '8-10', '10-12', '12-14', '14-16', '16-18', '18-24'];
@@ -284,11 +391,86 @@ export function NewDailyReportForm({
     ? (newAccumTotal / project.contractAmount) * 100
     : 0;
 
+  const [emptySectionsWarning, setEmptySectionsWarning] = useState<string[] | null>(null);
+
+  function checkEmptySections(): string[] {
+    const empty: string[] = [];
+
+    // 1. Clima y EHS
+    const rainD = parseFloat(rainHoursDay) || 0;
+    const rainN = parseFloat(rainHoursNight) || 0;
+    const talkM = parseFloat(safetyTalkMinutesDay) || 0;
+    if (rainD === 0 && rainN === 0 && talkM === 0) {
+      empty.push('1. Clima y EHS (Lluvia y Charlas de Seguridad)');
+    }
+
+    // 2. Maquinaria
+    const hasMachineryHours = machineryRows.some((m) => (parseFloat(m.dayHours) || 0) > 0);
+    if (!hasMachineryHours) {
+      empty.push('2. Equipo y Maquinaria (No se registraron horas trabajadas de equipo)');
+    }
+
+    // 3. Personal
+    const hasPersonnel = personnelRows.some((p) => p.quantity > 0);
+    if (!hasPersonnel) {
+      empty.push('3. Personal y H-Hombre (No se registró personal en obra)');
+    }
+
+    // 4. Rubros
+    const hasRubroProgress = evaluatedRubros.some((r) => r.dayQty > 0);
+    if (!hasRubroProgress) {
+      empty.push('4. Rubros de Avance (No se ingresaron cantidades ejecutadas hoy)');
+    }
+
+    // 5. Actividades
+    const hasActivities = Boolean(
+      activitiesTodayVial.trim() ||
+      activitiesTodayPavimento.trim() ||
+      activitiesTodayDrenaje.trim() ||
+      activitiesTodayPuentes.trim() ||
+      activitiesTodayTopografia.trim() ||
+      activitiesTodaySenalizacion.trim() ||
+      activitiesTodayAmbiental.trim() ||
+      activitiesTomorrowVial.trim() ||
+      activitiesTomorrowPavimento.trim() ||
+      activitiesTomorrowDrenaje.trim() ||
+      activitiesTomorrowPuentes.trim() ||
+      activitiesTomorrowTopografia.trim() ||
+      activitiesTomorrowSenalizacion.trim() ||
+      activitiesTomorrowAmbiental.trim()
+    );
+    if (!hasActivities) {
+      empty.push('6. Resumen de Actividades (No se detallaron actividades realizadas hoy)');
+    }
+
+    // 6. Novedades y Comentarios
+    const hasNoveltiesOrComments = Boolean(
+      noveltiesRisks.trim() ||
+      contractorComments.trim() ||
+      supervisorComments.trim()
+    );
+    if (!hasNoveltiesOrComments) {
+      empty.push('8. Novedades y Comentarios (Campos de observaciones vacíos)');
+    }
+
+    return empty;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const empty = checkEmptySections();
+    if (empty.length > 0) {
+      setEmptySectionsWarning(empty);
+      return;
+    }
+    await executeSubmission();
+  }
+
+  async function executeSubmission() {
     try {
       setLoading(true);
       setError(null);
+      setEmptySectionsWarning(null);
 
       const rExecutions = evaluatedRubros.map((r) => ({
         projectRubroId: r.projectRubroId,
@@ -333,8 +515,16 @@ export function NewDailyReportForm({
         activitiesTodayPavimento,
         activitiesTodayDrenaje,
         activitiesTodayPuentes,
+        activitiesTodayTopografia,
+        activitiesTodaySenalizacion,
         activitiesTodayAmbiental,
         activitiesTomorrowVial,
+        activitiesTomorrowPavimento,
+        activitiesTomorrowDrenaje,
+        activitiesTomorrowPuentes,
+        activitiesTomorrowTopografia,
+        activitiesTomorrowSenalizacion,
+        activitiesTomorrowAmbiental,
         noveltiesRisks,
         contractorComments,
         supervisorComments,
@@ -436,7 +626,7 @@ export function NewDailyReportForm({
           <div className="hidden md:block border-l border-slate-700 pl-6">
             <span className="text-slate-400 block text-[10px] uppercase font-bold">% Avance Resultante</span>
             <span className="font-mono font-black text-sm text-white">
-              {estimatedProgressPercent.toFixed(2)}%
+              {estimatedProgressPercent.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
             </span>
           </div>
         </div>
@@ -821,10 +1011,10 @@ export function NewDailyReportForm({
                       {row.unit}
                     </td>
                     <td className="py-2 px-2 text-right font-mono text-slate-700">
-                      ${row.unitPrice.toFixed(2)}
+                      ${row.unitPrice.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-slate-400">
-                      {row.prevAccumQty.toLocaleString('es-EC')}
+                      {row.prevAccumQty.toLocaleString('es-EC', { maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-2 px-3 text-right bg-orange-50/40">
                       <input
@@ -837,13 +1027,13 @@ export function NewDailyReportForm({
                       />
                     </td>
                     <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
-                      {row.newAccumQty.toLocaleString('es-EC')}
+                      {row.newAccumQty.toLocaleString('es-EC', { maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-2 px-3 text-right font-mono font-bold text-orange-600">
-                      ${row.dayAmt.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                      ${row.dayAmt.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-slate-700">
-                      ${row.newAccumAmt.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
+                      ${row.newAccumAmt.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                 )))}
@@ -856,16 +1046,51 @@ export function NewDailyReportForm({
       {/* TAB 3: Maquinaria */}
       {activeTab === 'equipment' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-3">
-          <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-              2. Reporte de Equipo y Maquinaria en Obra
-            </h3>
+          <div className="p-4 bg-slate-50 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                2. Reporte de Equipo y Maquinaria en Obra
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Registre las horas trabajadas en la jornada. Puede filtrar por código o nombre, o registrar un equipo nuevo directamente aquí.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Filtrar por nombre o código..."
+                  value={machinerySearch}
+                  onChange={(e) => setMachinerySearch(e.target.value)}
+                  className="pl-8 pr-7 py-1.5 bg-white border border-slate-300 rounded-xl text-xs w-52 sm:w-64 focus:ring-1 focus:ring-orange-500 outline-none"
+                />
+                {machinerySearch && (
+                  <button
+                    type="button"
+                    onClick={() => setMachinerySearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateMachineryOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Nueva Maquinaria</span>
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-700 font-bold border-b text-[10px] uppercase tracking-wider">
+                  <th className="py-2.5 px-4">Código</th>
                   <th className="py-2.5 px-4">Descripción del Equipo</th>
                   <th className="py-2.5 px-3">Unidad</th>
                   <th className="py-2.5 px-3 text-right">Horas Ant.</th>
@@ -875,43 +1100,83 @@ export function NewDailyReportForm({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {machineryRows.map((m) => {
-                  const dayH = parseFloat(m.dayHours) || 0;
-                  const totalH = m.previousHours + dayH;
-                  return (
-                    <tr key={m.machineryId} className="hover:bg-slate-50/70">
-                      <td className="py-2.5 px-4 font-semibold text-slate-900">
-                        {m.description}
-                      </td>
-                      <td className="py-2.5 px-3 font-mono text-slate-500">{m.unit}</td>
-                      <td className="py-2.5 px-3 font-mono text-slate-500 text-right">
-                        {m.previousHours > 0 ? m.previousHours.toFixed(1) : '-'}
-                      </td>
-                      <td className="py-2.5 px-3 bg-orange-50/40 text-right">
-                        <input
-                          type="number"
-                          step="any"
-                          placeholder="0.0"
-                          value={m.dayHours}
-                          onChange={(e) => handleMachineChange(m.machineryId, 'dayHours', e.target.value)}
-                          className="w-20 px-2 py-1 bg-white border border-orange-300 rounded font-mono font-bold text-right text-xs"
-                        />
-                      </td>
-                      <td className="py-2.5 px-3 font-mono font-bold text-slate-900 bg-slate-50/60 text-right">
-                        {totalH > 0 ? totalH.toFixed(1) : '-'}
-                      </td>
-                      <td className="py-2.5 px-4">
-                        <input
-                          type="text"
-                          placeholder="Ej. Cantera La Cabuya producción"
-                          value={m.notes}
-                          onChange={(e) => handleMachineChange(m.machineryId, 'notes', e.target.value)}
-                          className="w-full px-2 py-1 bg-white border rounded text-xs"
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
+                {filteredMachineryRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                      <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                        <Search className="w-6 h-6 text-slate-400" />
+                        <h4 className="font-bold text-slate-800 text-xs">No se encontró maquinaria con ese criterio</h4>
+                        <p className="text-[11px] text-slate-500">
+                          No existe equipo que coincida con &quot;{machinerySearch}&quot;. Puede registrarlo on the fly.
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => setMachinerySearch('')}
+                            className="text-xs text-slate-600 hover:text-slate-800 font-semibold underline cursor-pointer"
+                          >
+                            Ver todos ({machineryRows.length})
+                          </button>
+                          <span className="text-slate-300">•</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewMachCode(machinerySearch.toUpperCase().trim());
+                              setNewMachName(machinerySearch.trim());
+                              setIsCreateMachineryOpen(true);
+                            }}
+                            className="text-xs text-orange-600 hover:text-orange-700 font-bold underline cursor-pointer"
+                          >
+                            + Crear maquinaria on the fly
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredMachineryRows.map((m) => {
+                    const dayH = parseFloat(m.dayHours) || 0;
+                    const totalH = m.previousHours + dayH;
+                    return (
+                      <tr key={m.machineryId} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2.5 px-4 font-mono font-bold text-orange-600">
+                          <span className="px-1.5 py-0.5 rounded bg-orange-50 border border-orange-200 text-[11px]">
+                            {m.code}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 font-semibold text-slate-900">
+                          {m.description}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono text-slate-500">{m.unit}</td>
+                        <td className="py-2.5 px-3 font-mono text-slate-500 text-right">
+                          {m.previousHours > 0 ? m.previousHours.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : '-'}
+                        </td>
+                        <td className="py-2.5 px-3 bg-orange-50/40 text-right">
+                          <input
+                            type="number"
+                            step="any"
+                            placeholder="0.0"
+                            value={m.dayHours}
+                            onChange={(e) => handleMachineChange(m.machineryId, 'dayHours', e.target.value)}
+                            className="w-20 px-2 py-1 bg-white border border-orange-300 rounded font-mono font-bold text-right text-xs"
+                          />
+                        </td>
+                        <td className="py-2.5 px-3 font-mono font-bold text-slate-900 bg-slate-50/60 text-right">
+                          {totalH > 0 ? totalH.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : '-'}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <input
+                            type="text"
+                            placeholder="Ej. Cantera La Cabuya producción"
+                            value={m.notes}
+                            onChange={(e) => handleMachineChange(m.machineryId, 'notes', e.target.value)}
+                            className="w-full px-2 py-1 bg-white border rounded text-xs"
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -921,11 +1186,98 @@ export function NewDailyReportForm({
       {/* TAB 4: Personal */}
       {activeTab === 'personnel' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-3">
-          <div className="p-4 bg-slate-50 border-b">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-              3. Reporte de Personal y Horas-Hombre
-            </h3>
+          <div className="p-4 bg-slate-50 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                3. Reporte de Personal y Horas-Hombre
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Personal y horas-hombre precargados del reporte anterior. Puede agregar nuevos cargos o eliminar los que no apliquen. Todo ítem nuevo aparecerá en los reportes posteriores.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAddPersonnelOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-all self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Agregar Cargo / Personal</span>
+            </button>
           </div>
+
+          {/* Formulario rápido para agregar nuevo cargo */}
+          {isAddPersonnelOpen && (
+            <div className="mx-4 p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-900">
+                  Nuevo Cargo o Cuadrilla para esta Obra
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsAddPersonnelOpen(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Nombre del Cargo / Rol <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Ayudante de Topografía, Fierrero, Mecánico..."
+                    value={newPersonnelRole}
+                    onChange={(e) => setNewPersonnelRole(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    N° Personas
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newPersonnelQty}
+                    onChange={(e) => setNewPersonnelQty(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-center font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    H-Hombre Día
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={newPersonnelHours}
+                    onChange={(e) => setNewPersonnelHours(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-center font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsAddPersonnelOpen(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-200/50 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddPersonnel}
+                  disabled={!newPersonnelRole.trim()}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  Agregar a la Cuadrilla
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
@@ -935,37 +1287,64 @@ export function NewDailyReportForm({
                   <th className="py-2.5 px-4 text-center">N° Personas</th>
                   <th className="py-2.5 px-4 text-center">H-Hombre Día</th>
                   <th className="py-2.5 px-4 text-right">Total H-Hombre</th>
+                  <th className="py-2.5 px-3 text-center w-12">Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {personnelRows.map((p, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50/70">
-                    <td className="py-2.5 px-4 font-semibold text-slate-900">
-                      {p.categoryRole}
-                    </td>
-                    <td className="py-2.5 px-4 text-center">
-                      <input
-                        type="number"
-                        min="0"
-                        value={p.quantity}
-                        onChange={(e) => handlePersonnelChange(idx, 'quantity', parseInt(e.target.value) || 0)}
-                        className="w-16 px-2 py-1 border rounded text-center font-mono text-xs"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4 text-center">
-                      <input
-                        type="number"
-                        min="0"
-                        value={p.manHoursDay}
-                        onChange={(e) => handlePersonnelChange(idx, 'manHoursDay', parseFloat(e.target.value) || 0)}
-                        className="w-16 px-2 py-1 border rounded text-center font-mono text-xs"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-800">
-                      {p.quantity * p.manHoursDay}
+                {personnelRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                      <p className="text-xs">No hay personal registrado en este reporte.</p>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddPersonnelOpen(true)}
+                        className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-bold underline cursor-pointer"
+                      >
+                        + Agregar el primer cargo
+                      </button>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  personnelRows.map((p, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-2.5 px-4 font-semibold text-slate-900">
+                        {p.categoryRole}
+                      </td>
+                      <td className="py-2.5 px-4 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          value={p.quantity}
+                          onChange={(e) => handlePersonnelChange(idx, 'quantity', parseInt(e.target.value) || 0)}
+                          className="w-16 px-2 py-1 border rounded-lg text-center font-mono text-xs"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={p.manHoursDay}
+                          onChange={(e) => handlePersonnelChange(idx, 'manHoursDay', parseFloat(e.target.value) || 0)}
+                          className="w-16 px-2 py-1 border rounded-lg text-center font-mono text-xs"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-800">
+                        {(p.quantity * p.manHoursDay).toLocaleString('es-EC', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePersonnel(idx)}
+                          className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors cursor-pointer"
+                          title="Eliminar este cargo del reporte"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -1174,11 +1553,174 @@ export function NewDailyReportForm({
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-orange-600/20 disabled:opacity-50 transition-all"
+          className="px-6 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-orange-600/20 disabled:opacity-50 transition-all cursor-pointer"
         >
           {loading ? 'Guardando Reporte...' : 'Guardar y Emitir Reporte Diario'}
         </button>
       </div>
+
+      {/* MODAL: Crear Maquinaria On The Fly */}
+      {isCreateMachineryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <Truck className="w-5 h-5 text-orange-600" />
+                <h3 className="font-bold text-slate-900 text-sm">
+                  Registrar Maquinaria on the fly
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateMachineryOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Crea un nuevo equipo en el catálogo del sistema e incorpóralo de inmediato a este reporte diario.
+            </p>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Código del Equipo <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. EX-20, VOLQ-18, TR-05"
+                  value={newMachCode}
+                  onChange={(e) => setNewMachCode(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl font-mono uppercase text-xs"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Nombre o Descripción <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. EXCAVADORA CAT 320D"
+                  value={newMachName}
+                  onChange={(e) => setNewMachName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl text-xs uppercase"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Categoría</label>
+                  <select
+                    value={newMachCategory}
+                    onChange={(e) => setNewMachCategory(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl text-xs bg-white"
+                  >
+                    <option value="Excavadora">Excavadora</option>
+                    <option value="Tractor">Tractor</option>
+                    <option value="Rodillo">Rodillo</option>
+                    <option value="Volqueta">Volqueta</option>
+                    <option value="Tanquero">Tanquero</option>
+                    <option value="Mula">Mula / Tráiler</option>
+                    <option value="Motoniveladora">Motoniveladora</option>
+                    <option value="Retroexcavadora">Retroexcavadora</option>
+                    <option value="Cargadora">Cargadora</option>
+                    <option value="Camioneta">Camioneta</option>
+                    <option value="Generador">Generador</option>
+                    <option value="Otro">Otro</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Tarifa Hora ($/h)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="0.00"
+                    value={newMachHourlyRate}
+                    onChange={(e) => setNewMachHourlyRate(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl font-mono text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t">
+              <button
+                type="button"
+                onClick={() => setIsCreateMachineryOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={creatingMachinery || !newMachCode.trim() || !newMachName.trim()}
+                onClick={handleCreateMachinerySubmit}
+                className="px-4 py-2 text-xs font-bold bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                {creatingMachinery ? 'Guardando...' : 'Guardar y Usar en Reporte'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Alerta de Secciones Vacías */}
+      {emptySectionsWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">
+                  Secciones sin información registrada
+                </h3>
+                <p className="text-xs text-slate-500">
+                  No has llenado nada en la(s) siguiente(s) sección(es):
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3.5 space-y-1.5 text-xs text-amber-900 max-h-52 overflow-y-auto font-medium">
+              {emptySectionsWarning.map((sec, idx) => (
+                <div key={idx} className="flex items-start gap-2">
+                  <span className="text-amber-500 font-bold">•</span>
+                  <span>{sec}</span>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-slate-600">
+              ¿Deseas aceptar para continuar con la emisión del reporte de todas formas o prefieres volver a revisar?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t">
+              <button
+                type="button"
+                onClick={() => setEmptySectionsWarning(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+              >
+                Volver a revisar
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => executeSubmission()}
+                className="px-4 py-2 text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                {loading ? 'Guardando...' : 'Aceptar para continuar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

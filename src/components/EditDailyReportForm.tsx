@@ -23,6 +23,8 @@ import {
   Edit3,
   AlertTriangle,
   Info,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { updateDailyReport } from '@/lib/actions/dailyReports';
 
@@ -246,6 +248,17 @@ export function EditDailyReportForm({
   }
 
   const [machineryRows, setMachineryRows] = useState(initialMachineryRows);
+  const [machinerySearch, setMachinerySearch] = useState('');
+
+  const filteredMachineryRows = useMemo(() => {
+    if (!machinerySearch.trim()) return machineryRows;
+    const q = machinerySearch.toLowerCase().trim();
+    return machineryRows.filter(
+      (m) =>
+        m.code.toLowerCase().includes(q) ||
+        m.description.toLowerCase().includes(q)
+    );
+  }, [machineryRows, machinerySearch]);
 
   function handleMachineChange(id: string, field: 'dayHours' | 'notes', value: string) {
     setMachineryRows((prev) =>
@@ -277,11 +290,35 @@ export function EditDailyReportForm({
     : defaultPersonnel;
 
   const [personnelRows, setPersonnelRows] = useState(initialPersonnel);
+  const [isAddPersonnelOpen, setIsAddPersonnelOpen] = useState(false);
+  const [newPersonnelRole, setNewPersonnelRole] = useState('');
+  const [newPersonnelQty, setNewPersonnelQty] = useState('1');
+  const [newPersonnelHours, setNewPersonnelHours] = useState('10');
 
   function handlePersonnelChange(index: number, field: 'quantity' | 'manHoursDay', value: number) {
     setPersonnelRows((prev) =>
       prev.map((p, i) => (i === index ? { ...p, [field]: value } : p))
     );
+  }
+
+  function handleAddPersonnel() {
+    if (!newPersonnelRole.trim()) return;
+    setPersonnelRows((prev) => [
+      ...prev,
+      {
+        categoryRole: newPersonnelRole.trim(),
+        quantity: parseInt(newPersonnelQty) || 1,
+        manHoursDay: parseFloat(newPersonnelHours) || 8,
+      },
+    ]);
+    setNewPersonnelRole('');
+    setNewPersonnelQty('1');
+    setNewPersonnelHours('10');
+    setIsAddPersonnelOpen(false);
+  }
+
+  function handleDeletePersonnel(index: number) {
+    setPersonnelRows((prev) => prev.filter((_, i) => i !== index));
   }
 
   // 6. Activities & Comments
@@ -861,7 +898,7 @@ export function EditDailyReportForm({
                         </span>
                       </td>
                       <td className="p-3 text-right font-mono text-slate-600">
-                        ${row.unitPrice.toFixed(2)}
+                        ${row.unitPrice.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className="p-3 text-right font-mono text-slate-500">
                         {row.prevAccumQty.toLocaleString('es-EC', { maximumFractionDigits: 2 })}
@@ -899,11 +936,32 @@ export function EditDailyReportForm({
       {/* TAB 3: Maquinaria */}
       {activeTab === 'equipment' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <div className="border-b border-slate-100 pb-4">
-            <h2 className="text-base font-bold text-slate-900">Parte Diario de Maquinaria & Horómetros</h2>
-            <p className="text-xs text-slate-500">
-              Registra las horas trabajadas por equipo en la jornada. El sistema conciliará automáticamente la diferencia con el horómetro acumulado del equipo.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Parte Diario de Maquinaria & Horómetros</h2>
+              <p className="text-xs text-slate-500">
+                Registra las horas trabajadas por equipo en la jornada. El sistema conciliará automáticamente la diferencia con el horómetro acumulado del equipo.
+              </p>
+            </div>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Filtrar maquinaria..."
+                value={machinerySearch}
+                onChange={(e) => setMachinerySearch(e.target.value)}
+                className="pl-8 pr-7 py-1.5 bg-white border border-slate-300 rounded-xl text-xs w-48 focus:ring-1 focus:ring-orange-500 outline-none"
+              />
+              {machinerySearch && (
+                <button
+                  type="button"
+                  onClick={() => setMachinerySearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-xs">
@@ -916,7 +974,7 @@ export function EditDailyReportForm({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {machineryRows.map((mach) => {
+                {filteredMachineryRows.map((mach) => {
                   const hasHours = (parseFloat(mach.dayHours) || 0) > 0;
                   return (
                     <tr
@@ -970,12 +1028,96 @@ export function EditDailyReportForm({
       {/* TAB 4: Personal */}
       {activeTab === 'personnel' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <div className="border-b border-slate-100 pb-4">
-            <h2 className="text-base font-bold text-slate-900">Personal & Mano de Obra en Frente</h2>
-            <p className="text-xs text-slate-500">
-              Modifica el número de trabajadores y las horas hombre por categoría en el reporte.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Personal & Mano de Obra en Frente</h2>
+              <p className="text-xs text-slate-500">
+                Modifica el número de trabajadores y las horas hombre por categoría en el reporte.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAddPersonnelOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-all self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Agregar Cargo / Personal</span>
+            </button>
           </div>
+
+          {/* Formulario rápido para agregar nuevo cargo */}
+          {isAddPersonnelOpen && (
+            <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-900">
+                  Nuevo Cargo o Cuadrilla
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsAddPersonnelOpen(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Nombre del Cargo <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Ayudante de Topografía, Fierrero..."
+                    value={newPersonnelRole}
+                    onChange={(e) => setNewPersonnelRole(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    N° Personas
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newPersonnelQty}
+                    onChange={(e) => setNewPersonnelQty(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-center font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    H-Hombre Día
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={newPersonnelHours}
+                    onChange={(e) => setNewPersonnelHours(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-center font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsAddPersonnelOpen(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-200/50 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddPersonnel}
+                  disabled={!newPersonnelRole.trim()}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  Agregar a la Cuadrilla
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {personnelRows.map((person, idx) => (
@@ -987,9 +1129,19 @@ export function EditDailyReportForm({
                   <span className="text-xs font-bold text-slate-900 line-clamp-1">
                     {person.categoryRole}
                   </span>
-                  <span className="font-mono text-[11px] font-semibold text-slate-500">
-                    {(person.quantity * person.manHoursDay).toFixed(0)} H-H
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-[11px] font-semibold text-slate-500">
+                      {(person.quantity * person.manHoursDay).toLocaleString('es-EC', { maximumFractionDigits: 2 })} H-H
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePersonnel(idx)}
+                      className="text-slate-400 hover:text-red-600 p-0.5 rounded hover:bg-red-50 transition-colors"
+                      title="Eliminar este cargo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>

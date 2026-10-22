@@ -250,7 +250,7 @@ export function OfficialReportDocument({
             </div>
             <div className="p-1.5">
               <span className="text-[9px] text-slate-500 block">% AVANCE:</span>
-              <span className="text-xs font-mono text-emerald-800 font-black">{report.progressPercentAccum.toFixed(2)}%</span>
+              <span className="text-xs font-mono text-emerald-800 font-black">{report.progressPercentAccum.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>
             </div>
             <div className="p-1.5">
               <span className="text-[9px] text-slate-500 block">DÍAS TRANSCURRIDOS / PLAZO:</span>
@@ -477,7 +477,7 @@ export function OfficialReportDocument({
               </div>
               <div className="text-right">
                 <span>% AVANCE ACUMULADO DE LA OBRA (LICOSA):</span>{' '}
-                <span className="font-mono text-sm text-emerald-800">{report.progressPercentAccum.toFixed(2)}%</span>
+                <span className="font-mono text-sm text-emerald-800">{report.progressPercentAccum.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>
               </div>
             </div>
           </div>

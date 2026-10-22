@@ -274,10 +274,13 @@ export function ProjectDetailView({
   }, [selectedReportId, allDailyReports, project]);
 
   // Calculated Progress metrics
-  const totalContractBudget = project.rubros.reduce(
-    (acc, r) => acc + r.currentQuantity * r.unitPrice,
-    project.contractAmount || 0
+  const rubroBudgetSum = project.rubros.reduce(
+    (acc, r) => acc + (r.currentQuantity || 0) * (r.unitPrice || 0),
+    0
   );
+  const totalContractBudget = (project.contractAmount && project.contractAmount > 0)
+    ? project.contractAmount
+    : (rubroBudgetSum || 0);
   const totalExecutedAccum = latestReport?.totalExecutedAccum || progressData?.summary?.totalExecutedAccum || 0;
   const progressPercent =
     totalContractBudget > 0 ? (totalExecutedAccum / totalContractBudget) * 100 : 0;
@@ -503,7 +506,7 @@ export function ProjectDetailView({
               ${totalContractBudget.toLocaleString('es-EC', { minimumFractionDigits: 2 })}
             </span>
             <span className="text-xs text-emerald-600 font-bold block mt-0.5">
-              ${totalExecutedAccum.toLocaleString('es-EC', { minimumFractionDigits: 2 })} ejecutados ({progressPercent.toFixed(2)}%)
+              ${totalExecutedAccum.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ejecutados ({progressPercent.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)
             </span>
           </div>
         </div>
@@ -666,7 +669,7 @@ export function ProjectDetailView({
                       Avance Físico-Financiero Acumulado
                     </span>
                     <span className="font-mono font-black text-emerald-600 text-base">
-                      {progressPercent.toFixed(2)}%
+                      {progressPercent.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                     </span>
                   </div>
                   <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
@@ -709,7 +712,7 @@ export function ProjectDetailView({
                       {isHealthy ? 'Obra en Plazo y Cronograma Normal' : 'Ritmo de Obra con Desfase Temporal'}
                     </span>
                     <span className="text-[11px] text-slate-500 block">
-                      Índice de Desempeño SPI: <strong>{spi.toFixed(2)}</strong> (Avance planillado vs Tiempo consumido)
+                      Índice de Desempeño SPI: <strong>{spi.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> (Avance planillado vs Tiempo consumido)
                     </span>
                   </div>
                 </div>
@@ -1471,7 +1474,7 @@ export function ProjectDetailView({
                       </td>
                       <td className="py-3.5 px-3 text-center">
                         <span className="font-mono font-bold px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {rep.progressPercentAccum.toFixed(2)}%
+                          {rep.progressPercentAccum.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                         </span>
                       </td>
                       <td className="py-3.5 px-3 text-center">
