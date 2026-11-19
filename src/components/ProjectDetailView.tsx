@@ -41,6 +41,10 @@ import {
   Receipt,
   Loader2,
   Edit3,
+  Scale,
+  Download,
+  ArrowRightLeft,
+  ArrowRight,
 } from 'lucide-react';
 import { ProjectExpensesTab } from '@/components/ProjectExpensesTab';
 import { ProjectDynamicCurves } from '@/components/ProjectDynamicCurves';
@@ -56,6 +60,7 @@ import { EditContractorModal } from '@/components/EditContractorModal';
 import { EditProjectModal } from '@/components/EditProjectModal';
 import { OfficialReportDocument } from '@/components/OfficialReportDocument';
 import { DailyReportHtmlDashboard } from '@/components/DailyReportHtmlDashboard';
+import { UploadPlanillaModal } from '@/components/UploadPlanillaModal';
 import { removeWorkerFromProject } from '@/lib/actions/workers';
 import { removeContractorFromProject } from '@/lib/actions/contractors';
 import { deleteDailyReport } from '@/lib/actions/dailyReports';
@@ -205,11 +210,11 @@ export function ProjectDetailView({
   const router = useRouter();
 
   // Validate initialTab
-  const validTabs = ['resumen', 'reportes', 'rubros', 'costos', 'modificaciones'];
+  const validTabs = ['resumen', 'reportes', 'rubros', 'costos', 'modificaciones', 'planillas'];
   const startingTab = initialTab && validTabs.includes(initialTab) ? (initialTab as any) : 'resumen';
 
   const [activeTab, setActiveTab] = useState<
-    'resumen' | 'reportes' | 'rubros' | 'costos' | 'modificaciones'
+    'resumen' | 'reportes' | 'rubros' | 'costos' | 'modificaciones' | 'planillas'
   >(startingTab);
 
   const [search, setSearch] = useState('');
@@ -225,6 +230,7 @@ export function ProjectDetailView({
   const [reportViewMode, setReportViewMode] = useState<'html' | 'pdf'>('html');
 
   // Modals
+  const [uploadPlanillaModalOpen, setUploadPlanillaModalOpen] = useState(false);
   const [addRubroOpen, setAddRubroOpen] = useState(false);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [excelSyncOpen, setExcelSyncOpen] = useState(false);
@@ -440,6 +446,16 @@ export function ProjectDetailView({
             <span>+ Crear Reporte Diario</span>
           </Link>
 
+          {/* Prominent Direct Action: Subir o Registrar Planilla */}
+          <button
+            onClick={() => setUploadPlanillaModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-700 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl text-xs font-black shadow-md shadow-orange-600/20 transition-all cursor-pointer"
+            title="Subir sábana en Excel o ingresar planilla manualmente para comparar vs partes diarios"
+          >
+            <Scale className="w-4 h-4 text-orange-200" />
+            <span>+ Subir Planilla</span>
+          </button>
+
           <Link
             href={`/bodega?projectId=${project.id}`}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-300"
@@ -592,6 +608,26 @@ export function ProjectDetailView({
           <History className="w-4 h-4" />
           <span>Modificaciones ({allAdjustments.length})</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('planillas')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'planillas'
+              ? 'bg-orange-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Scale className="w-4 h-4 text-orange-400" />
+          <span>Planillas & Comparador</span>
+        </button>
+
+        <Link
+          href={`/planillas?projectId=${project.id}`}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 ml-auto"
+        >
+          <Scale className="w-4 h-4 text-blue-600" />
+          <span>Comparar Planillas vs Obra</span>
+        </Link>
       </div>
 
       {/* ========================================================================= */}
@@ -1798,6 +1834,126 @@ export function ProjectDetailView({
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* TAB 6: PLANILLAS & COMPARADOR VS REPORTES DE OBRA                         */}
+      {/* ========================================================================= */}
+      {activeTab === 'planillas' && (
+        <div className="space-y-6">
+          {/* Card Principal: Banner de Subida & Acciones */}
+          <div className="bg-gradient-to-r from-orange-600 via-amber-600 to-orange-700 p-6 rounded-2xl shadow-lg shadow-orange-600/20 text-white flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-orange-200 text-xs font-black uppercase tracking-wider">
+                <Scale className="w-4 h-4" />
+                <span>Auditoría de Planillas vs Reportes Diarios (RDO)</span>
+              </div>
+              <h2 className="text-xl md:text-2xl font-black tracking-tight">
+                Control de Planillas vs Ejecución Física
+              </h2>
+              <p className="text-xs text-orange-100 max-w-2xl leading-relaxed">
+                Registra o sube las planillas oficiales de la obra (mediante archivo Excel o ingreso manual rubro por rubro). El sistema determina automáticamente el rango de partes diarios que abarca la fecha de corte y calcula el arrastre anterior (excedente o faltante).
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
+              <button
+                onClick={() => setUploadPlanillaModalOpen(true)}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-white text-orange-700 hover:bg-orange-50 rounded-xl text-xs font-black shadow-md transition-all cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4 text-orange-600" />
+                <span>+ Subir o Registrar Planilla</span>
+              </button>
+
+              <Link
+                href={`/planillas?projectId=${project.id}`}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-slate-900/70 hover:bg-slate-900 text-white border border-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-orange-300" />
+                <span>Abrir Comparador Completo</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Tarjetas de Capacidades del Módulo */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+              <div className="p-3 bg-blue-50 text-blue-700 rounded-xl w-fit">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <h3 className="font-black text-slate-900 text-sm">
+                1. Doble Método de Carga
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Sube la <strong>sábana contractual en Excel (.xlsx)</strong> con mapeo inteligente de columnas o ingresa las cantidades <strong>manualmente</strong> asistido por el catálogo de rubros del contrato.
+              </p>
+              <div className="pt-2">
+                <a
+                  href={`/api/plantilla-sabana?projectId=${project.id}`}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-orange-600 hover:text-orange-700"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Descargar Plantilla Excel del Contrato</span>
+                </a>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+              <div className="p-3 bg-orange-50 text-orange-700 rounded-xl w-fit">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <h3 className="font-black text-slate-900 text-sm">
+                2. Partes Diarios por Corte de Fechas
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Al seleccionar cualquier planilla, el sistema identifica de inmediato <strong>de qué reporte diario a qué reporte diario corresponde</strong> (ej. RDO #001 al RDO #024) y calcula la producción real en campo.
+              </p>
+              <div className="pt-2 text-xs text-slate-600 font-semibold">
+                ✓ Conciliación física y financiera automática
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+              <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl w-fit">
+                <ArrowRightLeft className="w-5 h-5" />
+              </div>
+              <h3 className="font-black text-slate-900 text-sm">
+                3. Arrastre de Excedente o Faltante
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Detecta si existe un <strong>excedente pendiente de cobro (A Favor)</strong> o <strong>sobre-facturación (En Exceso)</strong> arrastrado de períodos anteriores, mostrando el saldo neto consolidado.
+              </p>
+              <div className="pt-2 text-xs text-slate-600 font-semibold">
+                ✓ Soporte para auditoría y fiscalización
+              </div>
+            </div>
+          </div>
+
+          {/* Acceso Rápido a la Comparación */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-slate-900 text-white rounded-2xl">
+                <Scale className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-black text-slate-900 text-base">
+                  Planilla Oficial No. 01 - LICOSA OFC
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Período: 28/08/2026 al 26/09/2026 • Monto Líquido: $489,535.78 • 41 rubros contractuales
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href={`/planillas?projectId=${project.id}&mode=PERIOD`}
+              className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-black shadow-md transition-all inline-flex items-center gap-2"
+            >
+              <span>Ver Auditoría de Esta Planilla</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Modals for Rubros and Assignments */}
       {selectedRubroForAdjust && (
         <AdjustRubroModal
@@ -1871,6 +2027,18 @@ export function ProjectDetailView({
           onClose={() => setEditProjectOpen(false)}
         />
       )}
+
+      {/* Upload or Create Planilla Modal */}
+      <UploadPlanillaModal
+        isOpen={uploadPlanillaModalOpen}
+        onClose={() => setUploadPlanillaModalOpen(false)}
+        projectId={project.id}
+        projectCode={project.code}
+        onPlanillaUploaded={(newPlanillaId) => {
+          setUploadPlanillaModalOpen(false);
+          router.push(`/planillas?projectId=${project.id}&planillaId=${newPlanillaId}`);
+        }}
+      />
 
       {/* Delete Daily Report Modal */}
       {deleteReportTarget && (

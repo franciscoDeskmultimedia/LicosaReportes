@@ -28,6 +28,7 @@ import {
   ClipboardList,
   Bot,
   Sparkles,
+  Scale,
 } from 'lucide-react';
 import { logoutAction } from '@/lib/actions/auth';
 import { CurrentUser } from '@/lib/authTypes';
@@ -44,6 +45,7 @@ interface NavItem {
 const allNavItems: NavItem[] = [
   { name: 'Panel General', href: '/', icon: LayoutDashboard, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   { name: 'Proyectos', href: '/proyectos', icon: FolderGit2, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
+  { name: 'Planillas vs Obra', href: '/planillas', icon: Scale, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   // Ocultados temporalmente por solicitud del usuario:
   // { name: 'Personal & Cuadrillas', href: '/personal', icon: UserCheck, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
   // { name: 'Contratistas', href: '/contratistas', icon: Briefcase, roles: ['ADMIN', 'RESIDENTE_OBRA', 'FISCALIZADOR'] },
@@ -90,6 +92,7 @@ export function Navigation({
     if (item.href === '/bodega') return isAdmin || hasBodegaRole || hasResidentRole;
     if (item.href === '/reportes' || item.href === '/reportes/nuevo') return isAdmin || hasResidentRole;
     if (
+      item.href === '/planillas' ||
       item.href === '/avance' ||
       item.href === '/proyectos' ||
       item.href === '/personal' ||
